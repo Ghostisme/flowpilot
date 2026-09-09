@@ -107,7 +107,7 @@ The repository is ready to be imported into Vercel twice, just like the current 
 | FlowPilot Web | `apps/web` | Next.js |
 | FlowPilot API | `apps/api` | NestJS as one Vercel Function |
 
-The API accepts the same `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DB`, and `MYSQL_SSL` variables used by Agent Studio. FlowPilot does not reuse Agent Studio tables: it creates only `flowpilot_workflow_runs` and `flowpilot_workflow_events` in the shared database.
+The API accepts the same `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, and `MYSQL_SSL` connection variables used by Agent Studio. Set `MYSQL_DB=flowpilot` for this project. FlowPilot does not reuse Agent Studio tables or its `defaultdb`: it creates only `flowpilot_workflow_runs` and `flowpilot_workflow_events` in the dedicated `flowpilot` database.
 
 n8n itself remains a separate long-running service (n8n Cloud, Railway, Render, or another container host). Set `FLOWPILOT_API_URL` in n8n to the public FlowPilot API project URL and set the same `N8N_EVENT_SECRET` on both sides. Follow [DEPLOY.md](DEPLOY.md) for the exact project roots, variables, deployment order, and verification URLs.
 
@@ -164,7 +164,7 @@ pnpm --filter @flowpilot/web dev
 ## Persistence and adapters
 
 - `PERSISTENCE_DRIVER=memory` is the default and is ideal for a portfolio demo or a quick local run.
-- `PERSISTENCE_DRIVER=mysql` reuses Agent Studio-compatible `MYSQL_*` connection variables while keeping FlowPilot data isolated in `flowpilot_*` tables. This is the recommended Vercel configuration.
+- `PERSISTENCE_DRIVER=mysql` reuses Agent Studio-compatible MySQL connection variables while keeping FlowPilot data isolated in the dedicated `flowpilot` database and `flowpilot_*` tables. This is the recommended Vercel configuration.
 - `PERSISTENCE_DRIVER=postgres` keeps the local Docker path available through `DATABASE_URL`, also using `flowpilot_*` tables.
 - `WORKFLOW_DRIVER=simulator` keeps execution deterministic and requires no n8n process.
 - `WORKFLOW_DRIVER=n8n` uses `N8N_WEBHOOK_URL` and the event callback secret.
@@ -178,7 +178,7 @@ apps/api/                 NestJS API, simulator, SSE, persistence
 apps/web/                 Next.js operations console
 packages/contracts/       Shared TypeScript contracts and graph definition
 n8n/workflows/             Importable n8n workflow JSON
-infra/mysql/               Shared-MySQL-safe FlowPilot schema
+infra/mysql/               Dedicated-flowpilot-database schema
 infra/postgres/            Postgres bootstrap SQL
 scripts/                   Deterministic workflow generator + validator
 docs/                      Architecture and protocol notes

@@ -1,5 +1,6 @@
--- Safe to run in the same MYSQL_DB used by Agent Studio.
--- FlowPilot never reads or changes Agent Studio's ip_blocklist table.
+-- Run this in the dedicated `flowpilot` database created for FlowPilot.
+-- The connection service can be the same one used by Agent Studio, but this
+-- schema is isolated from Agent Studio's defaultdb and ip_blocklist table.
 
 CREATE TABLE IF NOT EXISTS flowpilot_workflow_runs (
   id varchar(80) PRIMARY KEY,

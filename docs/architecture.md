@@ -45,11 +45,11 @@ n8n is excellent at orchestration and integrations, but a portfolio-grade consol
 - the approval UI can resume either an in-process waiter or an n8n Wait node;
 - audit storage and retention can evolve independently of workflow editing.
 
-## Vercel and shared MySQL
+## Vercel and the dedicated FlowPilot MySQL database
 
 FlowPilot Web and FlowPilot API are separate Vercel projects rooted at `apps/web` and `apps/api`. The NestJS entrypoint remains `apps/api/src/main.ts`, which Vercel packages as one function. The API rehydrates a requested run from durable storage before reads, n8n callbacks, and approval actions, so correctness does not depend on a callback reaching the same warm function instance that created the run.
 
-The recommended cloud driver is MySQL using the same `MYSQL_*` connection variables as Agent Studio. Isolation is enforced at the table boundary: FlowPilot defaults to the `flowpilot_` prefix and only creates `flowpilot_workflow_runs` and `flowpilot_workflow_events`.
+The recommended cloud driver is MySQL using the same service credentials as Agent Studio, but with `MYSQL_DB=flowpilot`. Isolation is enforced at both the database and table boundaries: FlowPilot defaults to the `flowpilot_` prefix and only creates `flowpilot_workflow_runs` and `flowpilot_workflow_events` in its dedicated database.
 
 n8n remains a long-running external runtime. Its public trigger acknowledges immediately and continues execution asynchronously; every state transition is sent back to the authenticated FlowPilot callback. This prevents a Vercel request from staying open while a workflow is paused on human approval.
 

@@ -71,7 +71,8 @@ function tablePrefix(): string {
 function persistenceDriver(): PersistenceDriver {
   const configured = process.env.PERSISTENCE_DRIVER?.trim().toLowerCase();
   if (configured === "memory" || configured === "mysql" || configured === "postgres") return configured;
-  // Copying Agent Studio's MYSQL_* variables is enough to opt in locally and on Vercel.
+  // Copying Agent Studio's MySQL service credentials and setting MYSQL_DB=flowpilot
+  // is enough to opt in locally and on Vercel.
   if (process.env.MYSQL_HOST) return "mysql";
   if (process.env.DATABASE_URL) return "postgres";
   return "memory";
@@ -280,7 +281,7 @@ export class PersistenceService implements OnModuleInit, OnModuleDestroy {
       port: Number(process.env.MYSQL_PORT ?? 3306),
       user: process.env.MYSQL_USER,
       password: process.env.MYSQL_PASSWORD,
-      database: process.env.MYSQL_DB ?? "defaultdb",
+      database: process.env.MYSQL_DB ?? "flowpilot",
       waitForConnections: true,
       connectionLimit: Math.max(1, Number(process.env.MYSQL_POOL_SIZE ?? 2)),
       maxIdle: Math.max(1, Number(process.env.MYSQL_POOL_SIZE ?? 2)),

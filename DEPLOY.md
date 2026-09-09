@@ -8,10 +8,10 @@ GitHub: Ghostisme/flowpilot
     └── apps/api  → Vercel Project: FlowPilot API
 
 托管 n8n → n8n Cloud 或 Railway / Render 上的长驻 n8n
-共享数据库 → 使用 Agent Studio 现有的 MYSQL_* 连接配置
+MySQL 服务 → 复用 Agent Studio 的连接服务和凭据，但使用独立的 `flowpilot` 数据库
 ```
 
-Vercel 负责 Next.js 控制台和 NestJS API；n8n 不放进 Vercel，因为它需要持续运行的 webhook、Wait 审批执行和工作流存储。数据库可以直接使用 Agent Studio 当前的 MySQL 实例，但 FlowPilot 只创建 `flowpilot_*` 表，不读取或修改 Agent Studio 的 `ip_blocklist` 表。
+Vercel 负责 Next.js 控制台和 NestJS API；n8n 不放进 Vercel，因为它需要持续运行的 webhook、Wait 审批执行和工作流存储。FlowPilot 可以复用 Agent Studio 当前的 MySQL 服务、主机、端口、用户、密码和 SSL 配置，但 `MYSQL_DB` 固定使用你新建的 `flowpilot` 数据库。FlowPilot 只在这个数据库创建 `flowpilot_*` 表，不读取或修改 Agent Studio 的 `defaultdb` / `ip_blocklist`。
 
 ## 0. 推送独立仓库
 
@@ -20,7 +20,7 @@ Vercel 负责 Next.js 控制台和 NestJS API；n8n 不放进 Vercel，因为它
 ```powershell
 Set-Location 'C:\Users\Administrator\Desktop\创业\flowpilot'
 git add .
-git commit -m "feat: prepare FlowPilot for Vercel and shared MySQL"
+git commit -m "feat: use dedicated FlowPilot MySQL database"
 git push origin main
 ```
 
@@ -46,7 +46,7 @@ MYSQL_HOST=<与 Agent Studio 相同>
 MYSQL_PORT=<与 Agent Studio 相同>
 MYSQL_USER=<与 Agent Studio 相同>
 MYSQL_PASSWORD=<与 Agent Studio 相同>
-MYSQL_DB=<与 Agent Studio 相同>
+MYSQL_DB=flowpilot
 MYSQL_SSL=true
 MYSQL_SSL_CA=<可选；没有时仍使用加密连接>
 MYSQL_POOL_SIZE=2
@@ -62,7 +62,7 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o-mini
 ```
 
-这里的 `MYSQL_*` 变量名和行为与 Agent Studio 的 `server/.env` 对齐。不要把密码写进 Git；从 Agent Studio 的本地 `.env` 或现有 Vercel/Railway 环境中复制到 Vercel API Project 的 Environment Variables 即可。
+这里的连接变量名和行为与 Agent Studio 的 `server/.env` 对齐，但不要复制 Agent Studio 的数据库名：FlowPilot 使用 `MYSQL_DB=flowpilot`。不要把密码写进 Git；从 Agent Studio 的本地 `.env` 或现有 Vercel/Railway 环境中复制连接凭据到 Vercel API Project 的 Environment Variables 即可。
 
 如果此时还没有 n8n 公网域名，第一次部署 API 时可以暂时使用：
 
@@ -110,7 +110,7 @@ pnpm db:reuse-agent-studio
 C:\Users\Administrator\Desktop\创业\agent-studio\server\.env
 ```
 
-并只复制 `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_DB`、`MYSQL_SSL` 到 FlowPilot 的本地 `.env`。
+脚本会复制 `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_SSL`，并把 FlowPilot 的 `MYSQL_DB` 强制设为 `flowpilot`；不会沿用 Agent Studio 的 `defaultdb`。
 
 ## 2. 部署 n8n
 
@@ -193,7 +193,7 @@ Invalid payload
 推荐严格按这个顺序：
 
 ```text
-1. 准备 Agent Studio 当前 MySQL 连接配置
+1. 准备 Agent Studio 当前 MySQL 连接配置，并确认 `flowpilot` 数据库已创建
 2. 先以 WORKFLOW_DRIVER=simulator 部署 FlowPilot API，得到 API URL
 3. 用该 API URL 部署 n8n 并导入三个工作流
 4. 把 API 切换到 WORKFLOW_DRIVER=n8n，填入 n8n URL 后重新部署
@@ -232,4 +232,4 @@ docker compose up -d --build
 pnpm smoke
 ```
 
-本地 PostgreSQL 使用 `flowpilot_*` 表，云端共享 MySQL 也使用同样的 `flowpilot_*` 表前缀；两套环境不会混用数据。
+本地 PostgreSQL 使用 `flowpilot_*` 表，云端 `flowpilot` MySQL 数据库也使用同样的 `flowpilot_*` 表前缀；云端不会写入 Agent Studio 的 `defaultdb`。

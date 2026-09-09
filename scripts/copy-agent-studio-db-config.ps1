@@ -1,10 +1,11 @@
 param(
   [string]$SourceEnv = (Join-Path $PSScriptRoot '..\..\agent-studio\server\.env'),
-  [string]$TargetEnv = (Join-Path $PSScriptRoot '..\.env')
+  [string]$TargetEnv = (Join-Path $PSScriptRoot '..\.env'),
+  [string]$FlowPilotDatabase = 'flowpilot'
 )
 
 $ErrorActionPreference = 'Stop'
-$keys = @('MYSQL_HOST', 'MYSQL_PORT', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_DB', 'MYSQL_SSL')
+$keys = @('MYSQL_HOST', 'MYSQL_PORT', 'MYSQL_USER', 'MYSQL_PASSWORD', 'MYSQL_SSL')
 
 if (-not (Test-Path -LiteralPath $SourceEnv)) {
   throw "Agent Studio environment file was not found: $SourceEnv"
@@ -36,6 +37,11 @@ foreach ($line in Get-Content -LiteralPath $TargetEnv -Encoding UTF8) {
       $existing[$key] = $true
       continue
     }
+    if ($key -eq 'MYSQL_DB') {
+      $lines.Add("MYSQL_DB=$FlowPilotDatabase")
+      $existing[$key] = $true
+      continue
+    }
     if ($key -eq 'PERSISTENCE_DRIVER') {
       $lines.Add('PERSISTENCE_DRIVER=mysql')
       $existing[$key] = $true
@@ -53,10 +59,11 @@ foreach ($line in Get-Content -LiteralPath $TargetEnv -Encoding UTF8) {
 foreach ($key in $keys) {
   if (-not $existing.ContainsKey($key)) { $lines.Add("$key=$($sourceValues[$key])") }
 }
+if (-not $existing.ContainsKey('MYSQL_DB')) { $lines.Add("MYSQL_DB=$FlowPilotDatabase") }
 if (-not $existing.ContainsKey('PERSISTENCE_DRIVER')) { $lines.Add('PERSISTENCE_DRIVER=mysql') }
 if (-not $existing.ContainsKey('FLOWPILOT_TABLE_PREFIX')) { $lines.Add('FLOWPILOT_TABLE_PREFIX=flowpilot_') }
 
 Set-Content -LiteralPath $TargetEnv -Value $lines -Encoding UTF8
 Write-Output "Copied Agent Studio database settings into FlowPilot .env."
-Write-Output "Only MYSQL_* values were copied; values were not printed."
-Write-Output "FlowPilot will use tables prefixed with flowpilot_ in the shared database."
+Write-Output "Connection values were copied without printing secrets."
+Write-Output "FlowPilot database was set to '$FlowPilotDatabase' with tables prefixed by flowpilot_."
