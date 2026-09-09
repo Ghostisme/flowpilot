@@ -1,0 +1,87 @@
+{
+  "id": "flowpilot-error-handler",
+  "name": "FlowPilot — Workflow Error Handler",
+  "active": true,
+  "nodes": [
+    {
+      "id": "eb7766df-6bef-593d-830f-2733e8031afa",
+      "name": "Workflow Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        0
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "0a4fd6eb-e177-5e97-94c6-e0ede4121ac1",
+      "name": "Format Error Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const source = $json;\nreturn [{ json: {\n  context: source,\n  channel: '#workflow-alerts',\n  text: 'FlowPilot workflow failed',\n  executionId: source.execution?.id ?? null,\n  workflow: source.workflow?.name ?? 'unknown',\n  lastNode: source.execution?.lastNodeExecuted ?? null,\n  error: source.execution?.error?.message ?? source.error?.message ?? 'Unknown workflow error'\n} }];"
+      }
+    },
+    {
+      "id": "d0b6803d-3298-5093-81e6-51aaf63fc90e",
+      "name": "Send Error Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        140,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FLOWPILOT_API_URL + '/api/integrations/slack/messages' }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 15000
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Workflow Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error Alert": {
+      "main": [
+        [
+          {
+            "node": "Send Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all"
+  },
+  "versionId": "fa0c7cc9-609b-5936-826d-231ebb07b322",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "tags": []
+}

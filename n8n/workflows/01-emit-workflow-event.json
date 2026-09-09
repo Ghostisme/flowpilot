@@ -1,0 +1,73 @@
+{
+  "id": "flowpilot-emit-event",
+  "name": "FlowPilot — Emit Workflow Event",
+  "active": false,
+  "nodes": [
+    {
+      "id": "2def890f-e3a3-5d4d-8d3d-4506b3364312",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -260,
+        0
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "b148ebd2-eccd-53ca-8918-6b474c1bc3fb",
+      "name": "Publish FlowPilot Events",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FLOWPILOT_API_URL + '/api/internal/n8n/events' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-flowpilot-event-secret",
+              "value": "={{ $env.N8N_EVENT_SECRET }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 15000
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Publish FlowPilot Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "versionId": "9960c2d3-1e0b-53ea-b6cd-7cc2da0f5077",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "tags": []
+}

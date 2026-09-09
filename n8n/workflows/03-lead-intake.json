@@ -1,0 +1,1405 @@
+{
+  "id": "flowpilot-lead-intake",
+  "name": "FlowPilot — AI Lead Intake & Routing",
+  "active": true,
+  "nodes": [
+    {
+      "id": "2d6dd912-c79d-51a9-931c-a6d988846a31",
+      "name": "Receive Lead",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1560,
+        40
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "flowpilot-lead-intake",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "webhookId": "95b37a67-150f-538b-ad51-473c2e644477"
+    },
+    {
+      "id": "edcc7cd7-ffd9-540f-b571-132f5c88ae47",
+      "name": "Initialize Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1340,
+        40
+      ],
+      "parameters": {
+        "jsCode": "const body = $json.body ?? $json;\nconst input = body.input ?? body;\nreturn [{ json: {\n  runId: body.runId,\n  workflowId: body.workflowId ?? 'lead-intake',\n  executionId: $execution.id,\n  input,\n  receivedAt: new Date().toISOString()\n} }];"
+      }
+    },
+    {
+      "id": "96b33427-c2ac-55fd-b3d1-0c447b05ca85",
+      "name": "Prepare Run Started",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1120,
+        40
+      ],
+      "parameters": {
+        "jsCode": "const context = $json;\nreturn [{ json: { context, events: [\n  { type: 'run.started', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, status: 'running' },\n  { type: 'node.completed', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'webhook', status: 'success', output: { source: context.input.source } },\n  { type: 'node.started', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'normalize', status: 'running' }\n] } }];"
+      }
+    },
+    {
+      "id": "97015ce2-216e-5cf1-998f-e0f0c91d31e9",
+      "name": "Emit Run Started",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        -900,
+        40
+      ],
+      "parameters": {
+        "operation": "call_workflow",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "flowpilot-emit-event",
+          "mode": "id"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "83434707-2781-59b8-8f4b-1f46063e8506",
+      "name": "Normalize Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -680,
+        40
+      ],
+      "parameters": {
+        "jsCode": "const input = $json.input;\nreturn [{ json: { ...$json, input: {\n  ...input,\n  name: String(input.name ?? '').trim(),\n  company: String(input.company ?? '').trim(),\n  email: String(input.email ?? '').trim().toLowerCase(),\n  message: String(input.message ?? '').trim()\n}, idempotencyKey: String(input.email ?? '').trim().toLowerCase() + ':' + String(input.company ?? '').trim().toLowerCase() } }];"
+      }
+    },
+    {
+      "id": "8a6b48a6-06a7-5b07-ba23-fc027a5f562e",
+      "name": "Prepare Normalized",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -460,
+        40
+      ],
+      "parameters": {
+        "jsCode": "const context = $json;\nreturn [{ json: { context, events: [\n  { type: 'node.completed', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'normalize', status: 'success', output: { normalizedEmail: context.input.email, idempotencyKey: context.idempotencyKey } },\n  { type: 'node.started', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'validate', status: 'running' }\n] } }];"
+      }
+    },
+    {
+      "id": "ca74c7e0-6a15-54e6-9c16-fd58c9660eb8",
+      "name": "Emit Normalized",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        -240,
+        40
+      ],
+      "parameters": {
+        "operation": "call_workflow",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "flowpilot-emit-event",
+          "mode": "id"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "b1eacb0a-3d72-5893-b690-77859fc46dc6",
+      "name": "Validate Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -20,
+        40
+      ],
+      "parameters": {
+        "jsCode": "const input = $json.input;\nconst errors = [];\nif (!input.name) errors.push('name is required');\nif (!input.company) errors.push('company is required');\nif (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(input.email)) errors.push('valid email is required');\nif (!input.message || input.message.length < 10) errors.push('message is too short');\nreturn [{ json: { ...$json, validation: { valid: errors.length === 0 && input.scenario !== 'invalid', errors: input.scenario === 'invalid' ? ['valid email is required'] : errors } } }];"
+      }
+    },
+    {
+      "id": "d7cb96a4-4d53-57a4-99b6-c25b159d61f8",
+      "name": "Payload Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        200,
+        40
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "d99c3123-2c95-55d7-9a74-a15062b733cd",
+              "leftValue": "={{ $json.validation.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c7a848df-7a45-5eed-b57c-d6a720cf9c84",
+      "name": "Prepare Valid",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        -60
+      ],
+      "parameters": {
+        "jsCode": "const context = $json;\nreturn [{ json: { context, events: [\n  { type: 'node.completed', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'validate', status: 'success', output: context.validation },\n  { type: 'branch.selected', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'validate', branch: 'valid' },\n  { type: 'node.started', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'dedupe', status: 'running' }\n] } }];"
+      }
+    },
+    {
+      "id": "1c712be9-53cf-50cb-bc35-dab2a3f6145d",
+      "name": "Emit Valid",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        640,
+        -60
+      ],
+      "parameters": {
+        "operation": "call_workflow",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "flowpilot-emit-event",
+          "mode": "id"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "bdee9466-252a-5956-a564-27b13b04279b",
+      "name": "Check Duplicate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        860,
+        -60
+      ],
+      "parameters": {
+        "jsCode": "const duplicate = $json.input.scenario === 'duplicate' || $json.input.email.includes('duplicate');\nreturn [{ json: { ...$json, deduplication: { duplicate, existingLeadId: duplicate ? 'crm_lead_existing_042' : null } } }];"
+      }
+    },
+    {
+      "id": "b4214248-68fc-5e87-aaf8-c68e9f33118e",
+      "name": "Duplicate Lead?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1080,
+        -60
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "35b71a18-a9e7-5b28-960c-84fa6b8b7ec0",
+              "leftValue": "={{ $json.deduplication.duplicate }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "6efe246c-c46a-58cc-a406-e7e02b8731d0",
+      "name": "Prepare New Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        20
+      ],
+      "parameters": {
+        "jsCode": "const context = $json;\nreturn [{ json: { context, events: [\n  { type: 'node.completed', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'dedupe', status: 'success', output: context.deduplication },\n  { type: 'branch.selected', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'dedupe', branch: 'new' },\n  { type: 'node.started', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'ai_extract', status: 'running' }\n] } }];"
+      }
+    },
+    {
+      "id": "97bf9f92-31e7-5c7d-bee9-872d9aafbd05",
+      "name": "Emit New Lead",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        1520,
+        20
+      ],
+      "parameters": {
+        "operation": "call_workflow",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "flowpilot-emit-event",
+          "mode": "id"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "412325e4-5cae-5699-8bda-4e84d7b81c16",
+      "name": "AI Qualify Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1740,
+        20
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FLOWPILOT_API_URL + '/api/integrations/ai/qualify' }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ context: $json, input: $json.input }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      }
+    },
+    {
+      "id": "78a9c8e9-377a-50a3-9109-802abe779b8f",
+      "name": "Prepare Qualification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1960,
+        20
+      ],
+      "parameters": {
+        "jsCode": "const context = $json;\nreturn [{ json: { context, events: [\n  { type: 'node.completed', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'ai_extract', status: 'success', output: { ...context.qualification, adapter: context.aiResult } },\n  { type: 'node.started', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'score', status: 'running' }\n] } }];"
+      }
+    },
+    {
+      "id": "a1bfc69e-5853-51a7-a9c9-b5e9c7e60ec3",
+      "name": "Emit Qualification",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        2180,
+        20
+      ],
+      "parameters": {
+        "operation": "call_workflow",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "flowpilot-emit-event",
+          "mode": "id"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "a095a871-67ba-5a33-b305-079ddc1a8b32",
+      "name": "Score Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        20
+      ],
+      "parameters": {
+        "jsCode": "const q = $json.qualification;\nreturn [{ json: { ...$json, scoring: { score: q.score, route: q.route, explanation: q.score + '/100 because ' + q.signals.join(', ') } } }];"
+      }
+    },
+    {
+      "id": "8a69257a-6133-5f00-8156-0c9c66d95e81",
+      "name": "Prepare Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2620,
+        20
+      ],
+      "parameters": {
+        "jsCode": "const context = $json;\nconst nextNode = context.qualification.route === 'high' ? 'crm' : context.qualification.route === 'medium' ? 'approval' : 'nurture';\nreturn [{ json: { context, events: [\n  { type: 'node.completed', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'score', status: 'success', output: context.scoring },\n  { type: 'node.started', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'route', status: 'running' },\n  { type: 'node.completed', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'route', status: 'success', output: { route: context.qualification.route, score: context.qualification.score } },\n  { type: 'branch.selected', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'route', branch: context.qualification.route },\n  { type: 'node.started', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: nextNode, status: 'running' }\n] } }];"
+      }
+    },
+    {
+      "id": "6f93c3c0-2077-5859-9b81-eed43b04074c",
+      "name": "Emit Score",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        2840,
+        20
+      ],
+      "parameters": {
+        "operation": "call_workflow",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "flowpilot-emit-event",
+          "mode": "id"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "327b2fc7-0664-50cc-8578-5e0b41a01e6c",
+      "name": "High Intent?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3060,
+        20
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "794fa97b-328e-59ff-a798-4fe6cb4d6e13",
+              "leftValue": "={{ $json.qualification.route === 'high' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "564db670-010f-533a-a8ae-d11fa75d9d36",
+      "name": "Needs Approval?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3280,
+        140
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "4f50c1ba-2bc1-5470-a786-0a26990a8459",
+              "leftValue": "={{ $json.qualification.route === 'medium' }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "44e8cc93-99ba-5a80-9e48-7615c1761f21",
+      "name": "Create CRM Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3280,
+        -100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FLOWPILOT_API_URL + '/api/integrations/crm/leads' }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ context: $json, lead: $json.input }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      }
+    },
+    {
+      "id": "dc574cce-3561-51b3-bfb5-608cfcff63b6",
+      "name": "Prepare CRM Complete",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3500,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "const context = $json;\nreturn [{ json: { context, events: [\n  { type: 'node.completed', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'crm', status: 'success', output: context.crmResult },\n  { type: 'node.started', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'slack', status: 'running' }\n] } }];"
+      }
+    },
+    {
+      "id": "f2774ae2-0fcf-5977-8bb3-2ee3ac10662d",
+      "name": "Emit CRM Complete",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        3720,
+        -100
+      ],
+      "parameters": {
+        "operation": "call_workflow",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "flowpilot-emit-event",
+          "mode": "id"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "cceed9ed-3a7f-5570-b41a-21e7b57b6d8a",
+      "name": "Notify Sales",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3940,
+        -100
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FLOWPILOT_API_URL + '/api/integrations/slack/messages' }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ context: $json, channel: '#sales-hot-leads', lead: $json.input }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      }
+    },
+    {
+      "id": "1d97eaca-9b30-5d31-8775-0b058ca3dd1a",
+      "name": "Build Sales Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4160,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { ...$json, result: { accepted: true, outcome: $json.approval ? 'approved_and_routed' : 'routed_to_sales', score: $json.qualification.score, crmLeadId: $json.crmResult.record.id } } }];"
+      }
+    },
+    {
+      "id": "5dd5c830-189d-5667-9156-d729b4510358",
+      "name": "Prepare Approval",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3500,
+        140
+      ],
+      "parameters": {
+        "jsCode": "const context = $json;\nreturn [{ json: { context, events: [\n  { type: 'node.waiting', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'approval', status: 'waiting', output: { reason: 'human_review_required' } },\n  { type: 'approval.required', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'approval', status: 'waiting', metadata: { resumeUrl: $execution.resumeUrl } }\n] } }];"
+      }
+    },
+    {
+      "id": "da9dde8e-24c4-57cf-8305-bdc906d3b40f",
+      "name": "Emit Approval Required",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        3720,
+        140
+      ],
+      "parameters": {
+        "operation": "call_workflow",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "flowpilot-emit-event",
+          "mode": "id"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "418407a5-8a25-5f7e-983a-3e9c955185e0",
+      "name": "Wait for Approval",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        3940,
+        140
+      ],
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "POST",
+        "responseMode": "onReceived",
+        "options": {}
+      }
+    },
+    {
+      "id": "94551e11-1018-5803-ba58-8bca0b8c54d2",
+      "name": "Restore Approval Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4160,
+        140
+      ],
+      "parameters": {
+        "jsCode": "const context = $('Emit Approval Required').first().json;\nconst approval = $json.body ?? $json;\nreturn [{ json: { ...context, approval, approved: approval.decision !== 'rejected' } }];"
+      }
+    },
+    {
+      "id": "e52c7de1-5763-5680-a949-e8586ce694b4",
+      "name": "Prepare Approval Resolution",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4380,
+        140
+      ],
+      "parameters": {
+        "jsCode": "const context = $json;\nreturn [{ json: { context, events: [\n  { type: 'approval.resolved', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'approval', status: 'running', output: context.approval },\n  { type: 'node.completed', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'approval', status: 'success', output: context.approval }\n] } }];"
+      }
+    },
+    {
+      "id": "882ac744-0d5a-5ea2-8314-9fe60c8a027c",
+      "name": "Emit Approval Resolution",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        4600,
+        140
+      ],
+      "parameters": {
+        "operation": "call_workflow",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "flowpilot-emit-event",
+          "mode": "id"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "6870f5d8-b218-58a3-9c8d-b8c778ef635e",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        4820,
+        140
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "a8f48fba-bf95-5557-8b2b-1518a6ef227a",
+              "leftValue": "={{ $json.approved }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "2a7d7754-f132-5ba6-a7f5-9d4f1dce0f55",
+      "name": "Prepare Approved",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5040,
+        60
+      ],
+      "parameters": {
+        "jsCode": "const context = $json;\nreturn [{ json: { context, events: [\n  { type: 'branch.selected', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'approval', branch: 'approved' },\n  { type: 'node.started', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'crm', status: 'running' }\n] } }];"
+      }
+    },
+    {
+      "id": "32b4da86-35bb-52b4-adb7-5e1f9dcd4ae5",
+      "name": "Emit Approved",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        5260,
+        60
+      ],
+      "parameters": {
+        "operation": "call_workflow",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "flowpilot-emit-event",
+          "mode": "id"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "d7c9ab1f-71a5-59a6-b7d5-5ee5904b53a7",
+      "name": "Build Rejected Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5040,
+        220
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { ...$json, result: { accepted: true, outcome: 'rejected_by_human', note: $json.approval.note ?? null }, terminalBranch: 'rejected' } }];"
+      }
+    },
+    {
+      "id": "6f5c933b-95a1-5bbb-ba92-9971afe31e0a",
+      "name": "Send Nurture Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3500,
+        360
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FLOWPILOT_API_URL + '/api/integrations/email/send' }}",
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ context: $json, to: $json.input.email, campaign: 'workflow-education' }) }}",
+        "options": {
+          "timeout": 15000
+        }
+      }
+    },
+    {
+      "id": "4456c646-ad01-5bf1-a021-56f7c26fa9c0",
+      "name": "Build Nurture Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3720,
+        360
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { ...$json, result: { accepted: true, outcome: 'nurture_started', score: $json.qualification.score, emailId: $json.emailResult.email.id } } }];"
+      }
+    },
+    {
+      "id": "b3f84391-a176-50f5-9c5c-e6a96430a862",
+      "name": "Build Duplicate Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1300,
+        -180
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { ...$json, result: { accepted: true, outcome: 'skipped_duplicate', existingLeadId: $json.deduplication.existingLeadId }, terminalBranch: 'duplicate' } }];"
+      }
+    },
+    {
+      "id": "577f0c43-f9bd-52f6-86db-32ed957c03d1",
+      "name": "Build Invalid Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        420,
+        180
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { ...$json, result: { accepted: false, outcome: 'rejected', reason: 'invalid_payload', errors: $json.validation.errors }, terminalBranch: 'invalid' } }];"
+      }
+    },
+    {
+      "id": "b9edf2b6-30a6-5549-b90f-b8e3be60e42d",
+      "name": "Write Audit Trail",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4380,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { ...$json, audit: { runId: $json.runId, executionId: $json.executionId, outcome: $json.result.outcome, writtenAt: new Date().toISOString() } } }];"
+      }
+    },
+    {
+      "id": "2946ca13-8a0d-5f56-889a-06614574d0ca",
+      "name": "Prepare Final Events",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4600,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "const context = $json;\nconst events = [];\nif (context.terminalBranch === 'invalid') {\n  events.push(\n    { type: 'node.completed', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'validate', status: 'success', output: context.validation },\n    { type: 'branch.selected', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'validate', branch: 'invalid' },\n    { type: 'node.started', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'error', status: 'running' },\n    { type: 'node.completed', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'error', status: 'success', output: { code: 'VALIDATION_ERROR' } }\n  );\n}\nif (context.terminalBranch === 'duplicate') {\n  events.push(\n    { type: 'node.completed', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'dedupe', status: 'success', output: context.deduplication },\n    { type: 'branch.selected', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'dedupe', branch: 'duplicate' }\n  );\n}\nif (context.terminalBranch === 'rejected') {\n  events.push({ type: 'branch.selected', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'approval', branch: 'rejected' });\n}\nif (context.slackResult) events.push({ type: 'node.completed', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'slack', status: 'success', output: context.slackResult });\nif (context.emailResult) events.push({ type: 'node.completed', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'nurture', status: 'success', output: context.emailResult });\nconst skippedByOutcome = {\n  routed_to_sales: ['approval', 'nurture', 'error'],\n  approved_and_routed: ['nurture', 'error'],\n  rejected_by_human: ['crm', 'slack', 'nurture', 'error'],\n  nurture_started: ['crm', 'slack', 'approval', 'error'],\n  skipped_duplicate: ['ai_extract', 'score', 'route', 'crm', 'slack', 'approval', 'nurture', 'error'],\n  rejected: ['dedupe', 'ai_extract', 'score', 'route', 'crm', 'slack', 'approval', 'nurture']\n};\nfor (const nodeId of skippedByOutcome[context.result.outcome] ?? []) {\n  events.push({ type: 'node.skipped', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId, status: 'skipped', output: { reason: 'branch_not_selected' } });\n}\nevents.push(\n  { type: 'node.completed', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'audit', status: 'success', output: context.audit },\n  { type: 'node.started', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'response', status: 'running' },\n  { type: 'node.completed', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, nodeId: 'response', status: 'success', output: context.result },\n  { type: 'run.completed', runId: context.runId, workflowId: context.workflowId, executionId: context.executionId, status: 'succeeded', output: context.result }\n);\nreturn [{ json: { context, events } }];"
+      }
+    },
+    {
+      "id": "d621cfc2-03c2-50e6-a950-e0562260cd34",
+      "name": "Emit Run Completed",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [
+        4820,
+        -100
+      ],
+      "parameters": {
+        "operation": "call_workflow",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "flowpilot-emit-event",
+          "mode": "id"
+        },
+        "mode": "once",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "df541884-d994-5bf0-825f-68929e6aa664",
+      "name": "Finish Workflow",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5040,
+        -100
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { runId: $json.runId, executionId: $json.executionId, ...$json.result } }];"
+      }
+    }
+  ],
+  "connections": {
+    "Receive Lead": {
+      "main": [
+        [
+          {
+            "node": "Initialize Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Initialize Context": {
+      "main": [
+        [
+          {
+            "node": "Prepare Run Started",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Run Started": {
+      "main": [
+        [
+          {
+            "node": "Emit Run Started",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Run Started": {
+      "main": [
+        [
+          {
+            "node": "Normalize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Input": {
+      "main": [
+        [
+          {
+            "node": "Prepare Normalized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Normalized": {
+      "main": [
+        [
+          {
+            "node": "Emit Normalized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Normalized": {
+      "main": [
+        [
+          {
+            "node": "Validate Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Fields": {
+      "main": [
+        [
+          {
+            "node": "Payload Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Payload Valid?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Valid",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Invalid Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Valid": {
+      "main": [
+        [
+          {
+            "node": "Emit Valid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Valid": {
+      "main": [
+        [
+          {
+            "node": "Check Duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Duplicate": {
+      "main": [
+        [
+          {
+            "node": "Duplicate Lead?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplicate Lead?": {
+      "main": [
+        [
+          {
+            "node": "Build Duplicate Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare New Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare New Lead": {
+      "main": [
+        [
+          {
+            "node": "Emit New Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit New Lead": {
+      "main": [
+        [
+          {
+            "node": "AI Qualify Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Qualify Lead": {
+      "main": [
+        [
+          {
+            "node": "Prepare Qualification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Qualification": {
+      "main": [
+        [
+          {
+            "node": "Emit Qualification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Qualification": {
+      "main": [
+        [
+          {
+            "node": "Score Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score Lead": {
+      "main": [
+        [
+          {
+            "node": "Prepare Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Score": {
+      "main": [
+        [
+          {
+            "node": "Emit Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Score": {
+      "main": [
+        [
+          {
+            "node": "High Intent?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "High Intent?": {
+      "main": [
+        [
+          {
+            "node": "Create CRM Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Needs Approval?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Approval?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Approval",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Nurture Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Approval": {
+      "main": [
+        [
+          {
+            "node": "Emit Approval Required",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Approval Required": {
+      "main": [
+        [
+          {
+            "node": "Wait for Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Approval": {
+      "main": [
+        [
+          {
+            "node": "Restore Approval Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restore Approval Context": {
+      "main": [
+        [
+          {
+            "node": "Prepare Approval Resolution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Approval Resolution": {
+      "main": [
+        [
+          {
+            "node": "Emit Approval Resolution",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Approval Resolution": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Approved",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Rejected Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Approved": {
+      "main": [
+        [
+          {
+            "node": "Emit Approved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Approved": {
+      "main": [
+        [
+          {
+            "node": "Create CRM Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create CRM Lead": {
+      "main": [
+        [
+          {
+            "node": "Prepare CRM Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare CRM Complete": {
+      "main": [
+        [
+          {
+            "node": "Emit CRM Complete",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit CRM Complete": {
+      "main": [
+        [
+          {
+            "node": "Notify Sales",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Sales": {
+      "main": [
+        [
+          {
+            "node": "Build Sales Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Nurture Email": {
+      "main": [
+        [
+          {
+            "node": "Build Nurture Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Invalid Result": {
+      "main": [
+        [
+          {
+            "node": "Write Audit Trail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Duplicate Result": {
+      "main": [
+        [
+          {
+            "node": "Write Audit Trail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Sales Result": {
+      "main": [
+        [
+          {
+            "node": "Write Audit Trail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Nurture Result": {
+      "main": [
+        [
+          {
+            "node": "Write Audit Trail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Rejected Result": {
+      "main": [
+        [
+          {
+            "node": "Write Audit Trail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write Audit Trail": {
+      "main": [
+        [
+          {
+            "node": "Prepare Final Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Final Events": {
+      "main": [
+        [
+          {
+            "node": "Emit Run Completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Emit Run Completed": {
+      "main": [
+        [
+          {
+            "node": "Finish Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveExecutionProgress": true,
+    "saveDataSuccessExecution": "all",
+    "saveDataErrorExecution": "all",
+    "errorWorkflow": "flowpilot-error-handler"
+  },
+  "versionId": "72c00f1d-0aca-5a5c-9707-0d4cc2a48944",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "pinData": {},
+  "tags": []
+}

@@ -1,0 +1,19 @@
+{
+  "name": "flowpilot",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.23.0",
+  "scripts": {
+    "dev": "pnpm --filter @flowpilot/contracts build && pnpm --parallel --filter @flowpilot/api --filter @flowpilot/web dev",
+    "build": "pnpm --filter @flowpilot/contracts build && pnpm --filter @flowpilot/api build && pnpm --filter @flowpilot/web build",
+    "check": "pnpm typecheck && pnpm test && pnpm workflows:validate && pnpm build",
+    "typecheck": "pnpm --filter @flowpilot/contracts build && pnpm --filter @flowpilot/api typecheck && pnpm --filter @flowpilot/web typecheck",
+    "test": "pnpm --filter @flowpilot/api test && pnpm --filter @flowpilot/web test",
+    "workflows:generate": "node scripts/generate-n8n-workflows.mjs",
+    "workflows:validate": "node scripts/validate-n8n-workflows.mjs",
+    "db:reuse-agent-studio": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/copy-agent-studio-db-config.ps1",
+    "smoke": "node scripts/smoke-test.mjs",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down"
+  }
+}
