@@ -64,6 +64,14 @@ OPENAI_MODEL=gpt-4o-mini
 
 这里的 `MYSQL_*` 变量名和行为与 Agent Studio 的 `server/.env` 对齐。不要把密码写进 Git；从 Agent Studio 的本地 `.env` 或现有 Vercel/Railway 环境中复制到 Vercel API Project 的 Environment Variables 即可。
 
+如果此时还没有 n8n 公网域名，第一次部署 API 时可以暂时使用：
+
+```text
+WORKFLOW_DRIVER=simulator
+```
+
+先取得 API Project URL，部署完 n8n 后再把它切换成 `n8n`，补齐两个 n8n URL 并重新部署 API。这样不会产生 API 与 n8n 互相等待公网地址的循环。
+
 API 部署完成后，先打开：
 
 ```text
@@ -186,11 +194,12 @@ Invalid payload
 
 ```text
 1. 准备 Agent Studio 当前 MySQL 连接配置
-2. 部署 n8n，得到公网域名
-3. 部署 FlowPilot API，设置 MYSQL_* 和 n8n 变量
-4. 打开 /api/health 验证 API + MySQL
-5. 部署 FlowPilot Web，填 NEXT_PUBLIC_API_BASE
-6. 在 Web 控制台执行 high / medium / low 场景
+2. 先以 WORKFLOW_DRIVER=simulator 部署 FlowPilot API，得到 API URL
+3. 用该 API URL 部署 n8n 并导入三个工作流
+4. 把 API 切换到 WORKFLOW_DRIVER=n8n，填入 n8n URL 后重新部署
+5. 打开 /api/health 验证 API + MySQL
+6. 部署 FlowPilot Web，填 NEXT_PUBLIC_API_BASE
+7. 在 Web 控制台执行 high / medium / low 场景
 ```
 
 ## 5. 云端验收
