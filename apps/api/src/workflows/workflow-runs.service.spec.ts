@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { WorkflowRunsService } from "./workflow-runs.service";
 
 function service(): WorkflowRunsService {
@@ -68,6 +68,52 @@ describe("WorkflowRunsService", () => {
     expect(completed.selectedBranches).toContain("rejected");
     expect(completed.nodes.crm?.status).toBe("skipped");
     expect(completed.nodes.slack?.status).toBe("skipped");
+  });
+
+  it("wakes a sleeping n8n runtime before triggering a workflow", async () => {
+    const previous = {
+      driver: process.env.WORKFLOW_DRIVER,
+      webhookUrl: process.env.N8N_WEBHOOK_URL,
+      coldStartTimeout: process.env.N8N_COLD_START_TIMEOUT_MS,
+      coldStartPoll: process.env.N8N_COLD_START_POLL_MS,
+      webhookTimeout: process.env.N8N_WEBHOOK_TIMEOUT_MS,
+    };
+    process.env.WORKFLOW_DRIVER = "n8n";
+    process.env.N8N_WEBHOOK_URL = "https://flowpilot-n8n.onrender.com/webhook/flowpilot-lead-intake";
+    process.env.N8N_COLD_START_TIMEOUT_MS = "1000";
+    process.env.N8N_COLD_START_POLL_MS = "1";
+    process.env.N8N_WEBHOOK_TIMEOUT_MS = "1000";
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("starting", { status: 503, headers: { "content-type": "text/html" } }))
+      .mockResolvedValueOnce(Response.json({ status: "ok" }))
+      .mockResolvedValueOnce(Response.json({ message: "Workflow was started" }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    try {
+      const runs = service();
+      const run = await runs.createRun(input);
+
+      expect(run.driver).toBe("n8n");
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(fetchMock.mock.calls[0]?.[0]).toBe("https://flowpilot-n8n.onrender.com/healthz");
+      expect(fetchMock.mock.calls[1]?.[0]).toBe("https://flowpilot-n8n.onrender.com/healthz");
+      expect(fetchMock.mock.calls[2]?.[0]).toBe(process.env.N8N_WEBHOOK_URL);
+      expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: "POST" });
+    } finally {
+      vi.unstubAllGlobals();
+      for (const [key, value] of Object.entries({
+        WORKFLOW_DRIVER: previous.driver,
+        N8N_WEBHOOK_URL: previous.webhookUrl,
+        N8N_COLD_START_TIMEOUT_MS: previous.coldStartTimeout,
+        N8N_COLD_START_POLL_MS: previous.coldStartPoll,
+        N8N_WEBHOOK_TIMEOUT_MS: previous.webhookTimeout,
+      })) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
   });
 
   it.each([

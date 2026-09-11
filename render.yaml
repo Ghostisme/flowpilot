@@ -1,0 +1,69 @@
+services:
+  - type: web
+    name: flowpilot-n8n
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./n8n/Dockerfile
+    dockerContext: ./n8n
+    healthCheckPath: /healthz
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: PORT
+        value: "5678"
+      - key: N8N_PORT
+        value: "5678"
+      - key: N8N_LISTEN_ADDRESS
+        value: 0.0.0.0
+      - key: N8N_PROTOCOL
+        value: https
+      - key: N8N_PROXY_HOPS
+        value: "1"
+      - key: GENERIC_TIMEZONE
+        value: Asia/Shanghai
+      - key: TZ
+        value: Asia/Shanghai
+      - key: N8N_ENCRYPTION_KEY
+        sync: false
+      - key: N8N_BLOCK_ENV_ACCESS_IN_NODE
+        value: "false"
+      - key: N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS
+        value: "true"
+      - key: N8N_DIAGNOSTICS_ENABLED
+        value: "false"
+      - key: N8N_PERSONALIZATION_ENABLED
+        value: "false"
+      - key: N8N_VERSION_NOTIFICATIONS_ENABLED
+        value: "false"
+      - key: N8N_UNVERIFIED_PACKAGES_ENABLED
+        value: "false"
+      - key: N8N_CONCURRENCY_PRODUCTION_LIMIT
+        value: "1"
+      - key: EXECUTIONS_DATA_PRUNE
+        value: "true"
+      - key: EXECUTIONS_DATA_MAX_AGE
+        value: "168"
+      - key: DB_TYPE
+        value: postgresdb
+      - key: DB_POSTGRESDB_HOST
+        sync: false
+      - key: DB_POSTGRESDB_PORT
+        sync: false
+      - key: DB_POSTGRESDB_DATABASE
+        sync: false
+      - key: DB_POSTGRESDB_USER
+        sync: false
+      - key: DB_POSTGRESDB_PASSWORD
+        sync: false
+      - key: DB_POSTGRESDB_SCHEMA
+        value: public
+      - key: DB_POSTGRESDB_POOL_SIZE
+        value: "2"
+      - key: DB_POSTGRESDB_SSL_ENABLED
+        value: "true"
+      - key: DB_POSTGRESDB_SSL_REJECT_UNAUTHORIZED
+        value: "false"
+      - key: FLOWPILOT_API_URL
+        sync: false
+      - key: N8N_EVENT_SECRET
+        sync: false

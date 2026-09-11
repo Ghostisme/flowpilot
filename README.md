@@ -109,7 +109,7 @@ The repository is ready to be imported into Vercel twice, just like the current 
 
 The API accepts the same `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, and `MYSQL_SSL` connection variables used by Agent Studio. Set `MYSQL_DB=flowpilot` for this project. FlowPilot does not reuse Agent Studio tables or its `defaultdb`: it creates only `flowpilot_workflow_runs` and `flowpilot_workflow_events` in the dedicated `flowpilot` database.
 
-n8n itself remains a separate long-running service (n8n Cloud, Railway, Render, or another container host). Set `FLOWPILOT_API_URL` in n8n to the public FlowPilot API project URL and set the same `N8N_EVENT_SECRET` on both sides. Follow [DEPLOY.md](DEPLOY.md) for the exact project roots, variables, deployment order, and verification URLs.
+n8n itself remains a separate service. The zero-cost demo path is the repository's `render.yaml`: Render Free runs the n8n container and an Aiven Free PostgreSQL service stores n8n's workflows, users, and executions. FlowPilot's audit data still stays in the separate Aiven MySQL `flowpilot` database. Set `FLOWPILOT_API_URL` in n8n to the public FlowPilot API project URL and use the same `N8N_EVENT_SECRET` on both sides. Follow [DEPLOY.md](DEPLOY.md) for the exact variables, deployment order, cold-start handling, and verification URLs.
 
 ## API surface
 
@@ -168,6 +168,7 @@ pnpm --filter @flowpilot/web dev
 - `PERSISTENCE_DRIVER=postgres` keeps the local Docker path available through `DATABASE_URL`, also using `flowpilot_*` tables.
 - `WORKFLOW_DRIVER=simulator` keeps execution deterministic and requires no n8n process.
 - `WORKFLOW_DRIVER=n8n` uses `N8N_WEBHOOK_URL` and the event callback secret.
+- `N8N_COLD_START_TIMEOUT_MS=90000` makes the API wake a sleeping free n8n host through `/healthz` before sending workflow or approval POST requests.
 - CRM, Slack, and email endpoints are intentionally local mock adapters. They return provider-shaped records so the integration boundary is visible without causing external side effects.
 - The “AI” qualifier is deterministic by default. If `OPENAI_API_KEY` is present, the API uses the configured OpenAI-compatible `/chat/completions` endpoint and falls back to the deterministic adapter on errors.
 

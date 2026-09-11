@@ -204,6 +204,7 @@ export class WorkflowRunsService implements OnModuleInit {
       return;
     }
     try {
+      await this.waitForN8nReady(webhookUrl);
       const response = await fetch(webhookUrl, {
         method: "POST",
         headers: {
@@ -530,8 +531,42 @@ export class WorkflowRunsService implements OnModuleInit {
     return source.toString();
   }
 
+  private async waitForN8nReady(runtimeUrl: string): Promise<void> {
+    const timeoutMs = Number(process.env.N8N_COLD_START_TIMEOUT_MS ?? 0);
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return;
+
+    const healthUrl = process.env.N8N_HEALTHCHECK_URL?.trim()
+      || new URL("/healthz", runtimeUrl).toString();
+    const pollMs = Math.max(100, Number(process.env.N8N_COLD_START_POLL_MS ?? 2_000));
+    const deadline = Date.now() + timeoutMs;
+    let lastFailure = "no response";
+
+    while (Date.now() < deadline) {
+      const remainingMs = deadline - Date.now();
+      try {
+        const response = await fetch(healthUrl, {
+          signal: AbortSignal.timeout(Math.max(1, Math.min(10_000, remainingMs))),
+        });
+        const contentType = response.headers.get("content-type") ?? "";
+        if (response.ok && contentType.toLowerCase().includes("application/json")) {
+          const body = (await response.json().catch(() => undefined)) as { status?: string } | undefined;
+          if (body?.status === "ok") return;
+        }
+        lastFailure = `health check returned ${response.status}`;
+      } catch (error: unknown) {
+        lastFailure = error instanceof Error ? error.message : String(error);
+      }
+
+      const waitMs = Math.min(pollMs, Math.max(0, deadline - Date.now()));
+      if (waitMs > 0) await sleep(waitMs);
+    }
+
+    throw new Error(`n8n did not become ready within ${timeoutMs}ms (${lastFailure})`);
+  }
+
   private async resumeN8nApproval(resumeUrl: string, request: ApprovalRequest): Promise<void> {
     const target = this.n8nResumeUrl(resumeUrl);
+    await this.waitForN8nReady(target);
     let lastStatus = 0;
     // `approval.required` is emitted immediately before the n8n Wait node. On a
     // fast UI click, n8n can still be committing the waiting execution and

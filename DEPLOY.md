@@ -7,7 +7,7 @@ GitHub: Ghostisme/flowpilot
     ├── apps/web  → Vercel Project: FlowPilot Web
     └── apps/api  → Vercel Project: FlowPilot API
 
-托管 n8n → n8n Cloud 或 Railway / Render 上的长驻 n8n
+托管 n8n → Render Free 容器 + Aiven Free PostgreSQL
 MySQL 服务 → 复用 Agent Studio 的连接服务和凭据，但使用独立的 `flowpilot` 数据库
 ```
 
@@ -62,7 +62,7 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4o-mini
 ```
 
-这里的连接变量名和行为与 Agent Studio 的 `server/.env` 对齐，但不要复制 Agent Studio 的数据库名：FlowPilot 使用 `MYSQL_DB=flowpilot`。不要把密码写进 Git；从 Agent Studio 的本地 `.env` 或现有 Vercel/Railway 环境中复制连接凭据到 Vercel API Project 的 Environment Variables 即可。
+这里的连接变量名和行为与 Agent Studio 的 `server/.env` 对齐，但不要复制 Agent Studio 的数据库名：FlowPilot 使用 `MYSQL_DB=flowpilot`。不要把密码写进 Git；从 Agent Studio 的本地 `.env` 或现有托管环境中复制连接凭据到 Vercel API Project 的 Environment Variables 即可。
 
 如果此时还没有 n8n 公网域名，第一次部署 API 时可以暂时使用：
 
@@ -114,7 +114,108 @@ C:\Users\Administrator\Desktop\创业\agent-studio\server\.env
 
 ## 2. 部署 n8n
 
-### 方案 A：n8n Cloud
+### 方案 A：Render Free + Aiven Free PostgreSQL（推荐）
+
+这条路线不需要 Railway，也不需要 n8n Cloud 付费计划：
+
+```text
+Render Free Web Service → 运行仓库里的 n8n Docker 镜像
+Aiven Free PostgreSQL   → 保存 n8n 用户、工作流、凭据和执行记录
+Aiven MySQL/flowpilot   → 继续只保存 FlowPilot 的运行审计数据
+```
+
+注意：n8n 自身的数据库支持 SQLite 或 PostgreSQL，不能直接使用现有的 Aiven MySQL。需要在 Aiven 中另外创建一个 **PostgreSQL Free** 服务；这不是再创建一个 MySQL database。
+
+#### 2.1 创建免费的 n8n PostgreSQL
+
+1. 打开 [Aiven Console](https://console.aiven.io/)。
+2. Create service，选择 **PostgreSQL**。
+3. 计划选择 **Free**，区域优先选新加坡或与你的 Render 服务相近的区域。
+4. 创建完成后打开 Connection information，保留以下值：
+
+```text
+Host
+Port
+Database name（通常是 defaultdb）
+User（通常是 avnadmin）
+Password
+```
+
+这个 PostgreSQL 只给 n8n 使用。FlowPilot API 仍然使用已经创建好的 MySQL `flowpilot` 数据库，两者不要混填。
+
+#### 2.2 用 Blueprint 发布 Render 免费容器
+
+仓库根目录已经提供 [`render.yaml`](render.yaml)，其中固定了 `n8n/Dockerfile`、新加坡区域、免费实例、健康检查以及低内存并发限制。
+
+1. 打开 [Render Dashboard](https://dashboard.render.com/)，选择 **New → Blueprint**。
+2. 连接并选择 `Ghostisme/flowpilot` 仓库。
+3. Blueprint 文件使用仓库根目录的 `render.yaml`。
+4. Render 会要求填写以下没有写入 Git 的变量：
+
+```text
+DB_POSTGRESDB_HOST=<Aiven PostgreSQL Host>
+DB_POSTGRESDB_PORT=<Aiven PostgreSQL Port>
+DB_POSTGRESDB_DATABASE=<Aiven PostgreSQL Database name，通常 defaultdb>
+DB_POSTGRESDB_USER=<Aiven PostgreSQL User>
+DB_POSTGRESDB_PASSWORD=<Aiven PostgreSQL Password>
+
+N8N_ENCRYPTION_KEY=<本地生成并长期保存的随机字符串>
+FLOWPILOT_API_URL=https://<你的-api-project>.vercel.app
+N8N_EVENT_SECRET=<随机长字符串，必须与 FlowPilot API 完全相同>
+```
+
+在本地 PowerShell 可以一次生成两个值：
+
+```powershell
+$encryptionKey = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+$eventSecret = [Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+```
+
+分别填入 `N8N_ENCRYPTION_KEY` 和 `N8N_EVENT_SECRET`。保存好 `N8N_ENCRYPTION_KEY`，以后迁移或重建 Render 服务时必须继续使用同一个值，否则 n8n 无法解密以前保存的凭据。
+
+5. 点击 Apply / Deploy。首次构建会自动导入并发布三个 FlowPilot 工作流。
+6. 部署成功后会得到类似 `https://flowpilot-n8n-xxxx.onrender.com` 的域名。
+
+仓库入口脚本会读取 Render 自动提供的公网 URL，所以不需要在第一次部署前猜 `N8N_HOST`、`N8N_WEBHOOK_URL` 或 `N8N_EDITOR_BASE_URL`。
+
+#### 2.3 初始化并检查 n8n
+
+打开 Render 的 n8n 域名，第一次进入时创建 n8n owner 账号。然后确认下面三个工作流存在并处于 Published / Active 状态：
+
+```text
+FlowPilot — Emit Workflow Event
+FlowPilot — Error Handler
+FlowPilot — AI Lead Intake & Routing
+```
+
+检查：
+
+```text
+https://<你的-n8n-域名>/healthz
+https://<你的-n8n-域名>/webhook/flowpilot-lead-intake
+```
+
+`/healthz` 应返回 `{"status":"ok"}`。第二个地址只接受 POST，浏览器 GET 出现 404/405 不代表部署失败。
+
+#### 2.4 回填 Vercel API
+
+在 FlowPilot API Project 中设置并重新部署：
+
+```text
+WORKFLOW_DRIVER=n8n
+N8N_WEBHOOK_URL=https://<你的-n8n-域名>/webhook/flowpilot-lead-intake
+N8N_INTERNAL_BASE_URL=https://<你的-n8n-域名>
+N8N_HEALTHCHECK_URL=https://<你的-n8n-域名>/healthz
+N8N_COLD_START_TIMEOUT_MS=90000
+N8N_WEBHOOK_TIMEOUT_MS=30000
+N8N_EVENT_SECRET=<与 Render 完全相同>
+```
+
+Render Free 空闲约 15 分钟会休眠，唤醒通常需要约一分钟。FlowPilot API 会先用无副作用的 `/healthz` 唤醒 n8n，确认返回 JSON 后才触发工作流或恢复审批，因此不要把 `N8N_COLD_START_TIMEOUT_MS` 留成 `0`。
+
+Render 免费实例的文件系统会在休眠、重启或重新部署后丢失；这里没有使用本地 SQLite，n8n 状态放在 Aiven PostgreSQL，所以不会跟着容器文件系统消失。Render 自己的免费 PostgreSQL 目前会在 30 天后过期，因此这里不采用它。
+
+### 方案 B：n8n Cloud
 
 导入以下生成好的工作流：
 
@@ -133,9 +234,9 @@ N8N_EVENT_SECRET=<必须与 Vercel API 相同>
 
 如果当前 n8n Cloud 计划不允许工作流直接读取 `$env`，就在导入后把 HTTP Request 节点中的 API 地址改为 API Project URL，并把 `x-flowpilot-event-secret` 改为相同的 secret。自托管 n8n 可以直接使用 `$env`。
 
-### 方案 B：Railway / Render 自托管 n8n
+### 方案 C：其他长期运行的容器平台
 
-使用仓库中的 n8n 配置：
+如果后续改成付费常驻平台，继续使用仓库中的 n8n 配置：
 
 ```text
 C:\Users\Administrator\Desktop\创业\flowpilot\n8n\Dockerfile

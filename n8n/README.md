@@ -34,17 +34,21 @@ Keep the workflow IDs unchanged. The main workflow references `flowpilot-emit-ev
 - The Wait node sends its generated `$execution.resumeUrl` to the API as part of `approval.required` metadata.
 - The API can rewrite that URL with `N8N_INTERNAL_BASE_URL` when the URL advertised by n8n is browser-facing (`localhost`) but the API runs in another container.
 
-## Hosted runtime
+## Free hosted runtime
 
-The Next.js console and NestJS API can both run on Vercel, but this directory must run on a long-lived n8n host. For n8n Cloud, import the three JSON files. For Railway or Render, deploy this directory with its Dockerfile and attach persistent storage to `/home/node/.n8n` if using n8n's default SQLite database.
+The Next.js console and NestJS API can both run on Vercel, but n8n needs a container host. The repository root contains `render.yaml` for a Render Free web service. Use a separate Aiven Free PostgreSQL service as n8n's database; do not point n8n at FlowPilot's MySQL service because self-hosted n8n supports SQLite or PostgreSQL for its internal state.
 
-Production environment values:
+Render provides `RENDER_EXTERNAL_URL` and `RENDER_EXTERNAL_HOSTNAME`. The custom entrypoint converts them into `N8N_WEBHOOK_URL`, `N8N_EDITOR_BASE_URL`, and `N8N_HOST`, so the generated Render domain works without hardcoding it before the first deployment.
+
+The Blueprint prompts for the Aiven PostgreSQL fields, a stable n8n encryption key, and these FlowPilot values:
+
 
 ```text
+N8N_ENCRYPTION_KEY=a-long-random-value-that-you-save-for-redeploys
 FLOWPILOT_API_URL=https://YOUR-FLOWPILOT-API.vercel.app
 N8N_EVENT_SECRET=the-same-value-configured-on-the-api
-N8N_BLOCK_ENV_ACCESS_IN_NODE=false
-N8N_ENCRYPTION_KEY=a-long-random-stable-value
 ```
 
-The lead webhook now acknowledges immediately (`responseMode=onReceived`). Execution continues in n8n and publishes durable state to the FlowPilot API, so the Vercel function does not stay open during a human approval wait.
+Render Free sleeps after an idle period and has an ephemeral filesystem. PostgreSQL preserves the n8n owner account, workflows, credentials, and executions across sleeps and redeploys. Configure the Vercel API with `N8N_COLD_START_TIMEOUT_MS=90000`; the API waits for `/healthz` before workflow and approval POST requests.
+
+The lead webhook acknowledges immediately (`responseMode=onReceived`). Execution continues in n8n and publishes durable state to the FlowPilot API, so the Vercel function does not stay open during a human approval wait.
