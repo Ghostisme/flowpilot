@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "nest start --watch",
-    "build": "nest build",
+    "build": "tsc",
     "start": "node dist/main.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
