@@ -18,13 +18,13 @@ Vercel 负责 Next.js 控制台和 NestJS API；n8n 不放进 Vercel，因为它
 在本地项目目录执行：
 
 ```powershell
-Set-Location 'C:\Users\Administrator\Desktop\创业\flowpilot'
+Set-Location '<你的 flowpilot 仓库目录>'
 git add .
-git commit -m "feat: use dedicated FlowPilot MySQL database"
+git commit -m "deploy FlowPilot"
 git push origin main
 ```
 
-如果你还不想提交，可以先在 Vercel 连接当前 GitHub 仓库的工作分支；本地工作树目前没有自动提交或推送。
+当前独立仓库已经推送到 `Ghostisme/flowpilot`；后续修改再重复上述提交和推送步骤即可。
 
 ## 1. 先部署 API Project
 
@@ -100,14 +100,14 @@ flowpilot_workflow_events
 也可以在本地使用已经保存的 Agent Studio 配置生成 `.env`（不会打印密码）：
 
 ```powershell
-Set-Location 'C:\Users\Administrator\Desktop\创业\flowpilot'
+Set-Location '<你的 flowpilot 仓库目录>'
 pnpm db:reuse-agent-studio
 ```
 
 脚本读取：
 
 ```text
-C:\Users\Administrator\Desktop\创业\agent-studio\server\.env
+与 flowpilot 仓库同级的 agent-studio\server\.env
 ```
 
 脚本会复制 `MYSQL_HOST`、`MYSQL_PORT`、`MYSQL_USER`、`MYSQL_PASSWORD`、`MYSQL_SSL`，并把 FlowPilot 的 `MYSQL_DB` 强制设为 `flowpilot`；不会沿用 Agent Studio 的 `defaultdb`。
@@ -163,6 +163,8 @@ N8N_ENCRYPTION_KEY=<本地生成并长期保存的随机字符串>
 FLOWPILOT_API_URL=https://<你的-api-project>.vercel.app
 N8N_EVENT_SECRET=<随机长字符串，必须与 FlowPilot API 完全相同>
 ```
+
+如果 Render 之前已经按旧版 Blueprint 创建过服务，请在 **Environment** 中确认 `DB_POSTGRESDB_DATABASE` 当前值是 `flowpilot`；如果仍是 `defaultdb`，改成 `flowpilot` 后再执行一次 redeploy。Aiven Password 可在 Connection information 中点击显示或复制后填入 Render，但不要写入 Git。
 
 在本地 PowerShell 可以一次生成两个值：
 
@@ -220,9 +222,9 @@ Render 免费实例的文件系统会在休眠、重启或重新部署后丢失�
 导入以下生成好的工作流：
 
 ```text
-C:\Users\Administrator\Desktop\创业\flowpilot\n8n\workflows\01-emit-workflow-event.json
-C:\Users\Administrator\Desktop\创业\flowpilot\n8n\workflows\02-workflow-error-handler.json
-C:\Users\Administrator\Desktop\创业\flowpilot\n8n\workflows\03-lead-intake.json
+n8n\workflows\01-emit-workflow-event.json
+n8n\workflows\02-workflow-error-handler.json
+n8n\workflows\03-lead-intake.json
 ```
 
 在 n8n 中设置：
@@ -239,8 +241,8 @@ N8N_EVENT_SECRET=<必须与 Vercel API 相同>
 如果后续改成付费常驻平台，继续使用仓库中的 n8n 配置：
 
 ```text
-C:\Users\Administrator\Desktop\创业\flowpilot\n8n\Dockerfile
-C:\Users\Administrator\Desktop\创业\flowpilot\n8n\docker-entrypoint.sh
+n8n\Dockerfile
+n8n\docker-entrypoint.sh
 ```
 
 设置这些变量：
@@ -328,7 +330,7 @@ pnpm smoke
 Vercel 改造不会破坏本地链路。默认 Docker 仍使用 PostgreSQL：
 
 ```powershell
-Set-Location 'C:\Users\Administrator\Desktop\创业\flowpilot'
+Set-Location '<你的 flowpilot 仓库目录>'
 docker compose up -d --build
 pnpm smoke
 ```
