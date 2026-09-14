@@ -4,17 +4,16 @@ services:
     runtime: docker
     plan: free
     region: singapore
-    dockerfilePath: ./n8n/Dockerfile
-    dockerContext: ./n8n
+    rootDir: n8n
+    dockerfilePath: Dockerfile
+    dockerContext: .
     healthCheckPath: /healthz
     autoDeployTrigger: checksPass
     envVars:
       - key: PORT
         value: "5678"
-      - key: N8N_PORT
-        value: "5678"
       - key: N8N_LISTEN_ADDRESS
-        value: 0.0.0.0
+        value: "0.0.0.0"
       - key: N8N_PROTOCOL
         value: https
       - key: N8N_PROXY_HOPS
