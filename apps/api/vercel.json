@@ -1,19 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
-  "builds": [
-    {
-      "src": "dist/main.js",
-      "use": "@vercel/node"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "dist/main.js",
-      "methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
-    }
-  ],
   "installCommand": "pnpm install --filter @flowpilot/api...",
-  "buildCommand": "pnpm --filter @flowpilot/contracts build && pnpm --filter @flowpilot/api build"
+  "buildCommand": "pnpm --filter @flowpilot/contracts build && pnpm --filter @flowpilot/api build",
+  "functions": {
+    "dist/main.js": {
+      "runtime": "nodejs20.x"
+    }
+  }
 }
