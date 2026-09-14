@@ -209,6 +209,7 @@ N8N_WEBHOOK_URL=https://<你的-n8n-域名>/webhook/flowpilot-lead-intake
 N8N_INTERNAL_BASE_URL=https://<你的-n8n-域名>
 N8N_HEALTHCHECK_URL=https://<你的-n8n-域名>/healthz
 N8N_COLD_START_TIMEOUT_MS=90000
+N8N_COLD_START_POLL_MS=2000
 N8N_WEBHOOK_TIMEOUT_MS=30000
 N8N_EVENT_SECRET=<与 Render 完全相同>
 ```

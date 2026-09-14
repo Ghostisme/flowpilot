@@ -169,6 +169,7 @@ pnpm --filter @flowpilot/web dev
 - `WORKFLOW_DRIVER=simulator` keeps execution deterministic and requires no n8n process.
 - `WORKFLOW_DRIVER=n8n` uses `N8N_WEBHOOK_URL` and the event callback secret.
 - `N8N_COLD_START_TIMEOUT_MS=90000` makes the API wake a sleeping free n8n host through `/healthz` before sending workflow or approval POST requests.
+- `N8N_COLD_START_POLL_MS=2000` controls how often the API polls that health endpoint while waking a sleeping n8n host.
 - CRM, Slack, and email endpoints are intentionally local mock adapters. They return provider-shaped records so the integration boundary is visible without causing external side effects.
 - The “AI” qualifier is deterministic by default. If `OPENAI_API_KEY` is present, the API uses the configured OpenAI-compatible `/chat/completions` endpoint and falls back to the deterministic adapter on errors.
 
