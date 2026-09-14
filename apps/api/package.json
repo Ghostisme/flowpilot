@@ -2,6 +2,7 @@
   "name": "@flowpilot/api",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "nest start --watch",
     "build": "nest build",
