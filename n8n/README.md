@@ -36,11 +36,13 @@ Keep the workflow IDs unchanged. The main workflow references `flowpilot-emit-ev
 
 ## Free hosted runtime
 
-The Next.js console and NestJS API can both run on Vercel, but n8n needs a container host. The repository root contains `render.yaml` for a Render Free web service. Use a separate Aiven Free PostgreSQL service as n8n's database; do not point n8n at FlowPilot's MySQL service because self-hosted n8n supports SQLite or PostgreSQL for its internal state.
+The Next.js console and NestJS API can both run on Vercel, but n8n needs a container host. The repository root contains `render.yaml` for a Render Free web service. Use the existing Aiven PostgreSQL service and its `flowpilot` database as n8n's internal database; do not point n8n at FlowPilot's MySQL service because self-hosted n8n supports SQLite or PostgreSQL for its internal state.
+
+The Blueprint is prefilled with the Aiven service host `pg-nextjs-postgres-auth-starter-agent-studio-database.d.aivencloud.com`, port `17304`, and user `avnadmin`, and fixes `DB_POSTGRESDB_DATABASE=flowpilot`. This is the PostgreSQL database you created for n8n. It has the same name as the API's Aiven MySQL database only because the two services are kept isolated; the n8n connection string may still show `defaultdb`, but that default must not be used here.
 
 Render provides `RENDER_EXTERNAL_URL` and `RENDER_EXTERNAL_HOSTNAME`. The custom entrypoint converts them into `N8N_WEBHOOK_URL`, `N8N_EDITOR_BASE_URL`, and `N8N_HOST`, so the generated Render domain works without hardcoding it before the first deployment.
 
-The Blueprint prompts for the Aiven PostgreSQL fields, a stable n8n encryption key, and these FlowPilot values:
+The Blueprint prompts for the Aiven PostgreSQL host, port, user, and password (the database name is already fixed to `flowpilot`), a stable n8n encryption key, and these FlowPilot values:
 
 
 ```text

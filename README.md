@@ -109,7 +109,7 @@ The repository is ready to be imported into Vercel twice, just like the current 
 
 The API accepts the same `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, and `MYSQL_SSL` connection variables used by Agent Studio. Set `MYSQL_DB=flowpilot` for this project. FlowPilot does not reuse Agent Studio tables or its `defaultdb`: it creates only `flowpilot_workflow_runs` and `flowpilot_workflow_events` in the dedicated `flowpilot` database.
 
-n8n itself remains a separate service. The zero-cost demo path is the repository's `render.yaml`: Render Free runs the n8n container and an Aiven Free PostgreSQL service stores n8n's workflows, users, and executions. FlowPilot's audit data still stays in the separate Aiven MySQL `flowpilot` database. Set `FLOWPILOT_API_URL` in n8n to the public FlowPilot API project URL and use the same `N8N_EVENT_SECRET` on both sides. Follow [DEPLOY.md](DEPLOY.md) for the exact variables, deployment order, cold-start handling, and verification URLs.
+n8n itself remains a separate service. The zero-cost demo path is the repository's `render.yaml`: Render Free runs the n8n container and the existing Aiven PostgreSQL service stores n8n's workflows, users, and executions. The Blueprint fixes n8n's PostgreSQL database name to `flowpilot`; this is separate from the Aiven MySQL `flowpilot` database used for FlowPilot's audit data. Set `FLOWPILOT_API_URL` in n8n to the public FlowPilot API project URL and use the same `N8N_EVENT_SECRET` on both sides. Follow [DEPLOY.md](DEPLOY.md) for the exact variables, deployment order, cold-start handling, and verification URLs.
 
 ## API surface
 

@@ -124,24 +124,24 @@ Aiven Free PostgreSQL   → 保存 n8n 用户、工作流、凭据和执行记�
 Aiven MySQL/flowpilot   → 继续只保存 FlowPilot 的运行审计数据
 ```
 
-注意：n8n 自身的数据库支持 SQLite 或 PostgreSQL，不能直接使用现有的 Aiven MySQL。需要在 Aiven 中另外创建一个 **PostgreSQL Free** 服务；这不是再创建一个 MySQL database。
+注意：n8n 自身的数据库支持 SQLite 或 PostgreSQL，不能直接使用现有的 Aiven MySQL。你已经有 Aiven PostgreSQL 服务，并在其中创建了 `flowpilot` 数据库，所以不需要再创建第二个 PostgreSQL 服务；如果是从零开始，才需要选择 **PostgreSQL Free** 服务。
 
-#### 2.1 创建免费的 n8n PostgreSQL
+#### 2.1 使用现有 Aiven PostgreSQL 并确认 `flowpilot`
 
-1. 打开 [Aiven Console](https://console.aiven.io/)。
-2. Create service，选择 **PostgreSQL**。
-3. 计划选择 **Free**，区域优先选新加坡或与你的 Render 服务相近的区域。
-4. 创建完成后打开 Connection information，保留以下值：
+1. 打开 [Aiven Console](https://console.aiven.io/)，进入截图中的 PostgreSQL 服务。
+2. 打开 **Connect → Databases**，确认列表里有 `flowpilot`；你截图中的创建成功提示已经说明这一步完成。
+3. 打开 **Connection information**，使用以下值：
 
 ```text
-Host
-Port
-Database name（通常是 defaultdb）
-User（通常是 avnadmin）
+Host=pg-nextjs-postgres-auth-starter-agent-studio-database.d.aivencloud.com
+Port=17304
+Database name=flowpilot（你刚创建的数据库）
+User=avnadmin
+SSL mode=require
 Password
 ```
 
-这个 PostgreSQL 只给 n8n 使用。FlowPilot API 仍然使用已经创建好的 MySQL `flowpilot` 数据库，两者不要混填。
+截图里的 Service URI 可能仍然显示 `/defaultdb?sslmode=require`，那只是 Aiven 生成的默认连接目标；n8n 必须把数据库名设为你新建的 `flowpilot`。这个 PostgreSQL `flowpilot` 只给 n8n 使用，FlowPilot API 仍然使用已经创建好的 MySQL `flowpilot` 数据库，两者不要混填。
 
 #### 2.2 用 Blueprint 发布 Render 免费容器
 
@@ -150,13 +150,13 @@ Password
 1. 打开 [Render Dashboard](https://dashboard.render.com/)，选择 **New → Blueprint**。
 2. 连接并选择 `Ghostisme/flowpilot` 仓库。
 3. Blueprint 文件使用仓库根目录的 `render.yaml`。
-4. Render 会要求填写以下没有写入 Git 的变量：
+仓库已经按你截图中的 Aiven 服务预填了 Host、Port、Database name 和 User；Render 只会要求填写密码以及其他私密配置：
 
 ```text
-DB_POSTGRESDB_HOST=<Aiven PostgreSQL Host>
-DB_POSTGRESDB_PORT=<Aiven PostgreSQL Port>
-DB_POSTGRESDB_DATABASE=<Aiven PostgreSQL Database name，通常 defaultdb>
-DB_POSTGRESDB_USER=<Aiven PostgreSQL User>
+DB_POSTGRESDB_HOST=pg-nextjs-postgres-auth-starter-agent-studio-database.d.aivencloud.com
+DB_POSTGRESDB_PORT=17304
+DB_POSTGRESDB_DATABASE=flowpilot
+DB_POSTGRESDB_USER=avnadmin
 DB_POSTGRESDB_PASSWORD=<Aiven PostgreSQL Password>
 
 N8N_ENCRYPTION_KEY=<本地生成并长期保存的随机字符串>
