@@ -13,8 +13,10 @@ async function bootstrap(): Promise<void> {
   app.setGlobalPrefix("api");
   app.enableCors({
     origin: origins,
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "X-FlowPilot-Event-Secret"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "X-FlowPilot-Event-Secret", "Authorization"],
+    credentials: true,
+    exposedHeaders: ["Content-Length", "X-Request-Id"],
   });
   app.useGlobalPipes(
     new ValidationPipe({
