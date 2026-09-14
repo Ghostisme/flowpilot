@@ -1,5 +1,5 @@
 import { Global, Module } from "@nestjs/common";
-import { PersistenceService } from "./persistence.service";
+import { PersistenceService } from "./persistence.service.js";
 
 @Global()
 @Module({

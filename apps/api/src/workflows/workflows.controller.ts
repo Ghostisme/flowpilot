@@ -21,9 +21,9 @@ import {
   type RunEvent,
   type RunEventType,
 } from "@flowpilot/contracts";
-import { ApprovalDto } from "./dto/approval.dto";
-import { CreateRunDto } from "./dto/create-run.dto";
-import { WorkflowRunsService } from "./workflow-runs.service";
+import { ApprovalDto } from "./dto/approval.dto.js";
+import { CreateRunDto } from "./dto/create-run.dto.js";
+import { WorkflowRunsService } from "./workflow-runs.service.js";
 
 @Controller()
 export class WorkflowsController {

@@ -13,7 +13,10 @@
     "sourceMap": true,
     "incremental": true,
     "isolatedModules": false,
-    "strictPropertyInitialization": false
+    "strictPropertyInitialization": false,
+    "verbatimModuleSyntax": false,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true
   },
   "include": ["src/**/*.ts", "test/**/*.ts"],
   "exclude": ["node_modules", "dist"]

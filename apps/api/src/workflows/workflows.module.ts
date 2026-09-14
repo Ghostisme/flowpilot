@@ -1,6 +1,6 @@
 import { Module } from "@nestjs/common";
-import { WorkflowsController } from "./workflows.controller";
-import { WorkflowRunsService } from "./workflow-runs.service";
+import { WorkflowsController } from "./workflows.controller.js";
+import { WorkflowRunsService } from "./workflow-runs.service.js";
 
 @Module({
   controllers: [WorkflowsController],

@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Get, Post } from "@nestjs/common";
 import type { LeadInput } from "@flowpilot/contracts";
-import { AiQualificationService } from "./ai-qualification.service";
+import { AiQualificationService } from "./ai-qualification.service.js";
 
 @Controller("integrations")
 export class IntegrationsController {

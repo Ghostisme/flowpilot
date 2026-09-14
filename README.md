@@ -1,12 +1,34 @@
 # FlowPilot
 
+[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-15.x-black.svg)](https://nextjs.org/)
+[![NestJS](https://img.shields.io/badge/NestJS-10.x-red.svg)](https://nestjs.com/)
+[![n8n](https://img.shields.io/badge/n8n-workflow-orange.svg)](https://n8n.io/)
+
 > A standalone, observable n8n workflow console for AI lead intake, routing, approvals, and auditability.
 
 FlowPilot is deliberately separate from Agent Studio. It demonstrates a different engineering surface: **n8n executes the workflow, NestJS owns the run contract and event protocol, and Next.js renders the live operations console**.
 
 [**Vercel deployment guide**](DEPLOY.md) · [**Architecture**](docs/architecture.md) · [**Event protocol**](docs/event-protocol.md)
 
+## 🎬 Demo
+
+### Real-time Workflow Visualization
 ![FlowPilot dashboard](docs/flowpilot-dashboard.png)
+*Live node states, branch selection, and event history in the operations console*
+
+<!-- 
+After recording demos, add these:
+
+### High-Intent Lead Processing
+![High Intent Flow](docs/demo-high-intent.gif)
+*Automatic routing to CRM + Slack for qualified leads*
+
+### Human Approval Workflow
+![Approval Flow](docs/demo-approval.gif)
+*Pause execution for human decision, then resume workflow*
+-->
 
 ## What this demo proves
 

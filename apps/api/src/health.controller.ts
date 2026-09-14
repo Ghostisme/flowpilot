@@ -1,5 +1,5 @@
 import { Controller, Get } from "@nestjs/common";
-import { PersistenceService } from "./database/persistence.service";
+import { PersistenceService } from "./database/persistence.service.js";
 
 @Controller("health")
 export class HealthController {
