@@ -147,7 +147,7 @@ Password
 
 仓库根目录已经提供 [`render.yaml`](render.yaml)，其中固定了 `n8n/Dockerfile`、新加坡区域、免费实例、健康检查以及低内存并发限制。
 
-1. 打开 [Render Dashboard](https://dashboard.render.com/)，选择 **New → Blueprint**。
+1. 打开 [Render Dashboard](https://dashboard.render.com/)，选择 **New → Blueprint**；也可以直接使用 [Deploy to Render](https://render.com/deploy?repo=https://github.com/Ghostisme/flowpilot) 一键导入。
 2. 连接并选择 `Ghostisme/flowpilot` 仓库。
 3. Blueprint 文件使用仓库根目录的 `render.yaml`。
 仓库已经按你截图中的 Aiven 服务预填了 Host、Port、Database name 和 User；Render 只会要求填写密码以及其他私密配置：
