@@ -1,5 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pnpm --filter @flowpilot/contracts build && pnpm --filter @flowpilot/api build && cp -r dist/* api/",
+  "buildCommand": "pnpm --filter @flowpilot/contracts build && pnpm --filter @flowpilot/api build && node -e \"require('fs').cpSync('dist', 'api', {recursive: true, force: true})\"",
   "installCommand": "pnpm install --filter @flowpilot/api..."
 }
