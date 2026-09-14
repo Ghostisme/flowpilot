@@ -1,9 +1,22 @@
 #!/bin/sh
 set -eu
 
-if [ -n "${PORT:-}" ] && [ -z "${N8N_PORT:-}" ]; then
+# Render 提供 PORT，确保 n8n 使用它
+if [ -n "${PORT:-}" ]; then
   export N8N_PORT="$PORT"
+  echo "==> N8N_PORT set to: $N8N_PORT"
 fi
+
+# 确保 n8n 监听在所有网络接口上
+export N8N_LISTEN_ADDRESS="${N8N_LISTEN_ADDRESS:-0.0.0.0}"
+echo "==> N8N_LISTEN_ADDRESS set to: $N8N_LISTEN_ADDRESS"
+
+# 打印关键配置用于调试
+echo "==> Database config:"
+echo "    DB_TYPE: ${DB_TYPE:-not set}"
+echo "    DB_POSTGRESDB_HOST: ${DB_POSTGRESDB_HOST:-not set}"
+echo "    DB_POSTGRESDB_PORT: ${DB_POSTGRESDB_PORT:-not set}"
+echo "    DB_POSTGRESDB_DATABASE: ${DB_POSTGRESDB_DATABASE:-not set}"
 
 if [ -n "${RENDER_EXTERNAL_URL:-}" ]; then
   RENDER_PUBLIC_URL="${RENDER_EXTERNAL_URL%/}"
