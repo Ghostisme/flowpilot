@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "pnpm install --filter @flowpilot/api...",
-  "buildCommand": "pnpm --filter @flowpilot/contracts build && pnpm --filter @flowpilot/api build"
+  "buildCommand": "pnpm --filter @flowpilot/contracts build && pnpm --filter @flowpilot/api build",
+  "outputDirectory": "dist"
 }
