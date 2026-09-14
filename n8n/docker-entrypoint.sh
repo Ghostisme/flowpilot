@@ -34,11 +34,18 @@ IMPORTED_CHECKSUM="$(cat "$MARKER" 2>/dev/null || true)"
 
 if [ "$CURRENT_CHECKSUM" != "$IMPORTED_CHECKSUM" ]; then
   echo "Importing FlowPilot workflows..."
-  n8n import:workflow --separate --input=/opt/flowpilot/workflows
-  n8n publish:workflow --id=flowpilot-emit-event
-  n8n publish:workflow --id=flowpilot-lead-intake
-  n8n publish:workflow --id=flowpilot-error-handler
+  n8n import:workflow --separate --input=/opt/flowpilot/workflows || echo "WARNING: workflow import failed"
+  n8n publish:workflow --id=flowpilot-emit-event || echo "WARNING: failed to publish flowpilot-emit-event"
+  n8n publish:workflow --id=flowpilot-lead-intake || echo "WARNING: failed to publish flowpilot-lead-intake"
+  n8n publish:workflow --id=flowpilot-error-handler || echo "WARNING: failed to publish flowpilot-error-handler"
   printf '%s' "$CURRENT_CHECKSUM" > "$MARKER"
 fi
+
+echo "==> Starting n8n..."
+echo "==> Final environment check:"
+echo "    N8N_PORT: ${N8N_PORT:-not set}"
+echo "    N8N_LISTEN_ADDRESS: ${N8N_LISTEN_ADDRESS:-not set}"
+echo "    N8N_PROTOCOL: ${N8N_PROTOCOL:-not set}"
+echo ""
 
 exec n8n start
