@@ -32,15 +32,17 @@ MARKER="/home/node/.n8n/.flowpilot-workflows.sha256"
 CURRENT_CHECKSUM="$(sha256sum /opt/flowpilot/workflows/*.json | sha256sum | awk '{print $1}')"
 IMPORTED_CHECKSUM="$(cat "$MARKER" 2>/dev/null || true)"
 
-if [ "$CURRENT_CHECKSUM" != "$IMPORTED_CHECKSUM" ]; then
-  echo "Importing FlowPilot workflows..."
-  n8n import:workflow --separate --input=/opt/flowpilot/workflows || echo "WARNING: workflow import failed"
-  n8n publish:workflow --id=flowpilot-emit-event || echo "WARNING: failed to publish flowpilot-emit-event"
-  n8n publish:workflow --id=flowpilot-lead-intake || echo "WARNING: failed to publish flowpilot-lead-intake"
-  n8n publish:workflow --id=flowpilot-error-handler || echo "WARNING: failed to publish flowpilot-error-handler"
-  printf '%s' "$CURRENT_CHECKSUM" > "$MARKER"
-fi
+# 暂时跳过 workflow 导入，专注于让 n8n 先启动
+# if [ "$CURRENT_CHECKSUM" != "$IMPORTED_CHECKSUM" ]; then
+#   echo "Importing FlowPilot workflows..."
+#   n8n import:workflow --separate --input=/opt/flowpilot/workflows || echo "WARNING: workflow import failed"
+#   n8n publish:workflow --id=flowpilot-emit-event || echo "WARNING: failed to publish flowpilot-emit-event"
+#   n8n publish:workflow --id=flowpilot-lead-intake || echo "WARNING: failed to publish flowpilot-lead-intake"
+#   n8n publish:workflow --id=flowpilot-error-handler || echo "WARNING: failed to publish flowpilot-error-handler"
+#   printf '%s' "$CURRENT_CHECKSUM" > "$MARKER"
+# fi
 
+echo "==> Skipping workflow import for now, focusing on getting n8n to start..."
 echo "==> Starting n8n..."
 echo "==> Final environment check:"
 echo "    N8N_PORT: ${N8N_PORT:-not set}"
