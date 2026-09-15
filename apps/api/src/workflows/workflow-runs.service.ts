@@ -18,7 +18,7 @@ import type {
 } from "@flowpilot/contracts";
 import { LEAD_WORKFLOW } from "@flowpilot/contracts";
 import { ReplaySubject } from "rxjs";
-import { PersistenceService } from "../database/persistence.service";
+import { PersistenceService } from "../database/persistence.service.js";
 
 type EventPatch = Omit<Partial<RunEvent>, "id" | "sequence" | "createdAt" | "runId" | "workflowId">;
 
