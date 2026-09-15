@@ -110,18 +110,65 @@ FlowPilot 项目从提交 `8be6774` 到 `154f420` 之间进行了 **20+ 次 Verc
 
 ---
 
-## ✅ 正确的解决方案
+## ✅ 最终解决方案 (提交 `a6c165d` → 最新)
 
-### 1. **使用 Vercel Functions 标准结构**
+### **参考成功项目: nestjs-prisma-api-gateway**
 
-Vercel 的现代部署方式要求使用 `api/` 目录约定来定义 serverless 函数:
+通过分析 `/d/github_code/远程接单用于经验展示的相关项目/nestjs-prisma-api-gateway`,发现其成功配置:
 
 ```json
-// apps/api/vercel.json
+// server/vercel.json
+{
+  "installCommand": "pnpm install && pnpm prisma generate",
+  "functions": {
+    "api/index.ts": {
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api/index.ts"
+    }
+  ]
+}
+```
+
+**关键特点**:
+1. **不使用 pnpm filter** - 直接 `pnpm install`
+2. **api/index.ts** - Vercel Function 入口点
+3. **Root Directory**: `server` (独立目录,不是 monorepo apps 结构)
+4. **functions 配置** - 优化 serverless 内存和超时
+
+### **FlowPilot 的特殊问题**
+
+FlowPilot 是 monorepo 结构:
+```
+flowpilot/
+├── apps/api/          # Vercel Root Directory
+├── packages/contracts/ # 依赖包
+└── pnpm-workspace.yaml
+```
+
+**问题**: 当 Vercel Root Directory = `apps/api` 时:
+- pnpm 找不到父目录的 `pnpm-workspace.yaml`
+- `pnpm install --filter @flowpilot/api...` 失败
+- `@flowpilot/contracts` 依赖无法解析
+
+### **最终配置**
+
+#### 1. **vercel.json**
+```json
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "pnpm install --filter @flowpilot/api...",
-  "buildCommand": "pnpm --filter @flowpilot/contracts build && pnpm --filter @flowpilot/api build",
+  "buildCommand": "pnpm install && pnpm build",
+  "functions": {
+    "api/index.js": {
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",
@@ -131,16 +178,51 @@ Vercel 的现代部署方式要求使用 `api/` 目录约定来定义 serverless
 }
 ```
 
+#### 2. **构建脚本: scripts/build-with-contracts.mjs**
 ```javascript
-// apps/api/api/index.js (Vercel Function 入口)
+// 在 API 构建前先构建 contracts 包
+// 检测 ../../packages/contracts 是否存在
+// 如果存在,先执行 pnpm build
+// 然后 API 通过 node_modules 链接访问
+```
+
+#### 3. **package.json build 脚本**
+```json
+{
+  "scripts": {
+    "build": "node scripts/build-with-contracts.mjs && tsc"
+  }
+}
+```
+
+#### 4. **api/index.js 入口**
+```javascript
+// 导入编译后的 dist/main.js handler
 import handler from '../dist/main.js';
 export default handler;
 ```
 
-**为什么需要这样**:
-- Vercel 自动检测 `api/` 目录下的文件作为 serverless 函数
-- `rewrites` 将所有请求路由到这个函数
-- `api/index.js` 作为桥接层,导入编译后的 NestJS handler
+### **为什么这样能工作**
+
+1. **标准 pnpm install**:
+   - Vercel 在 `apps/api` 目录执行 `pnpm install`
+   - pnpm 会读取 `package.json` 中的 `@flowpilot/contracts` 依赖
+   - 自动创建 symlink 到 `../../packages/contracts`
+
+2. **预构建 contracts**:
+   - `build-with-contracts.mjs` 检测父目录是否有 contracts 包
+   - 如果有,先进入 `../../packages/contracts` 执行 `pnpm build`
+   - 生成 `dist/` 目录(28KB 类型定义 + JS)
+
+3. **API 构建**:
+   - `tsc` 编译 `src/` → `dist/`
+   - 导入语句 `import { ... } from '@flowpilot/contracts'`
+   - 通过 node_modules symlink 解析到已构建的 contracts
+
+4. **Vercel Function**:
+   - `api/index.js` 被识别为 serverless function
+   - 所有请求通过 `rewrites` 路由到这里
+   - 导出的 handler 处理 NestJS 请求
 
 ### 2. **Vercel Project 设置**
 
