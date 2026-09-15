@@ -184,7 +184,9 @@ export class WorkflowRunsService implements OnModuleInit {
   private async execute(runId: string): Promise<void> {
     const run = this.requireRun(runId);
     if (run.driver === "n8n") {
-      await this.executeN8n(runId);
+      // n8n 执行完全异步,不阻塞任何调用者
+      // executeN8n 会处理冷启动等待,但这发生在后台
+      void this.executeN8n(runId);
       return;
     }
     this.appendEvent(runId, "run.started", { status: "running" });
