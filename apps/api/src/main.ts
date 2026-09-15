@@ -32,6 +32,7 @@ async function bootstrap() {
   const origins = originsEnv
     .split(",")
     .map((origin) => origin.trim())
+    .map((origin) => origin.replace(/\/$/, "")) // 移除末尾的斜杠
     .filter(Boolean);
 
   console.log("[CORS] Parsed allowed origins:", origins);
