@@ -1,7 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "pnpm install --filter @flowpilot/api...",
-  "buildCommand": "pnpm --filter @flowpilot/contracts build && pnpm --filter @flowpilot/api build",
+  "buildCommand": "pnpm install && pnpm build",
+  "functions": {
+    "api/index.js": {
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",
