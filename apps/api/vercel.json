@@ -1,6 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
+  "buildCommand": "cd ../.. && pnpm --filter @flowpilot/contracts build && pnpm --filter @flowpilot/api build",
+  "installCommand": "cd ../.. && pnpm install --filter @flowpilot/api...",
+  "outputDirectory": "dist",
   "builds": [
     {
       "src": "dist/main.js",
