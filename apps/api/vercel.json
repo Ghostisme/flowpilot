@@ -1,5 +1,16 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "pnpm --filter @flowpilot/contracts build && pnpm --filter @flowpilot/api build && node -e \"require('fs').cpSync('dist', 'api', {recursive: true, force: true})\"",
-  "installCommand": "pnpm install --filter @flowpilot/api..."
+  "version": 2,
+  "builds": [
+    {
+      "src": "dist/main.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "dist/main.js"
+    }
+  ]
 }
