@@ -129,20 +129,15 @@ export class WorkflowRunsService implements OnModuleInit {
     this.subjects.set(runId, new ReplaySubject<RunEvent>(250));
     await this.persistRun(run);
 
+    // 对于 n8n 驱动:只等待 webhook 调用成功,然后立即返回给客户端
+    // 工作流会在 n8n 中异步执行,通过事件回调更新状态
+    // 对于模拟器:在后台执行,不阻塞响应
     const execution = this.execute(runId).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Run ${runId} crashed: ${message}`);
       this.appendEvent(runId, "run.failed", { status: "failed", error: message });
     });
-    if (run.driver === "n8n") {
-      // n8n's public webhook uses responseMode=onReceived. Awaiting it only
-      // confirms that the external runtime accepted the execution; the long
-      // workflow and approval wait continue in n8n after Vercel responds.
-      await execution;
-      await this.flushPersistence(runId);
-    } else {
-      void execution;
-    }
+    void execution;
 
     return clone(run);
   }
