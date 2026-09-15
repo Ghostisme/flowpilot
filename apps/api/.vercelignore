@@ -1,8 +1,12 @@
-# 忽略所有根目录下的文件和文件夹
-/*
-# 但保留这些必要的文件
-!dist
-!vercel.json
-!package.json
-!pnpm-lock.yaml
-!node_modules
+# Vercel 部署时忽略的文件
+# 只忽略开发相关的目录和文件,保留所有构建必需的内容
+
+node_modules/.cache
+.env
+.env.local
+*.log
+.DS_Store
+test/
+*.spec.ts
+*.test.ts
+vitest.config.mts
