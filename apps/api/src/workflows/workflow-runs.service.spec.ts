@@ -96,6 +96,8 @@ describe("WorkflowRunsService", () => {
       const run = await runs.createRun(input);
 
       expect(run.driver).toBe("n8n");
+      // n8n 执行是异步的,需要等待后台 fetch 调用完成
+      await waitFor(() => fetchMock.mock.calls.length >= 3, 2000);
       expect(fetchMock).toHaveBeenCalledTimes(3);
       expect(fetchMock.mock.calls[0]?.[0]).toBe("https://flowpilot-n8n.onrender.com/healthz");
       expect(fetchMock.mock.calls[1]?.[0]).toBe("https://flowpilot-n8n.onrender.com/healthz");
