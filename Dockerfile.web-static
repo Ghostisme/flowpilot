@@ -1,0 +1,60 @@
+# syntax=docker/dockerfile:1.7
+#
+# FlowPilot Web 静态站点镜像。
+#
+# 与仓库根 Dockerfile 的 `web` target 的区别：那个跑 `next start`（Node 运行时），
+# 这个把站点静态导出后交给 nginx，运行镜像里没有 Node。生产用本文件。
+#
+# 构建上下文必须是仓库根（不是 apps/web）：web 依赖 workspace 包
+# @flowpilot/contracts，且 transpilePackages 要求源码可见，
+# 因此需要完整的 pnpm workspace 上下文才能构建。
+
+FROM node:24-bookworm-slim AS build
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+# 版本与根 package.json 的 packageManager 字段一致。
+RUN corepack enable && corepack prepare pnpm@11.23.0 --activate
+
+WORKDIR /app
+
+# 先只复制 workspace 的依赖清单。这些文件变动频率远低于源码，
+# 独立成层可让「只改业务代码」的构建跳过整个 install。
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json .npmrc ./
+COPY apps/api/package.json apps/api/package.json
+COPY apps/web/package.json apps/web/package.json
+COPY packages/contracts/package.json packages/contracts/package.json
+RUN pnpm install --frozen-lockfile
+
+COPY apps ./apps
+COPY packages ./packages
+
+# API 地址在构建期烘进 bundle，运行时改环境变量无效，生产必须用 --build-arg 覆盖。
+# 默认走同源相对路径 /api：前端与 API 挂在同一子域名下由宿主机 nginx 分流，
+# 浏览器请求同源，无需任何 CORS 配置。
+ARG NEXT_PUBLIC_API_BASE=/api
+ENV NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_BASE
+
+# 事件传输方式同样是构建期常量。默认 sse 与 API 的流式端点匹配。
+ARG NEXT_PUBLIC_EVENT_TRANSPORT=sse
+ENV NEXT_PUBLIC_EVENT_TRANSPORT=$NEXT_PUBLIC_EVENT_TRANSPORT
+
+ENV NEXT_OUTPUT=export
+
+# contracts 必须先构建：web 通过 dist/index.d.ts 拿类型，
+# 缺了它 next build 会在类型检查阶段直接失败。
+RUN pnpm --filter @flowpilot/contracts build \
+    && pnpm --filter @flowpilot/web build
+
+
+FROM nginx:1.27-alpine AS runtime
+
+RUN rm -f /etc/nginx/conf.d/default.conf
+
+COPY deploy/web-nginx.conf /etc/nginx/conf.d/app.conf
+COPY --from=build /app/apps/web/out /usr/share/nginx/html
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget -q -O /dev/null http://127.0.0.1/ || exit 1
