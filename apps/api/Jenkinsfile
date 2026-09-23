@@ -83,6 +83,18 @@ pipeline {
             exit 1
           fi
 
+          # 校验 env 文件格式。Docker 的 env_file 解析器只认三种行：
+          # 注释（# 开头）、空行、KEY=VALUE。多出任何别的形式 —— 比如
+          # 编辑时在行首误加了一个字符 —— 会等到 compose up 阶段才报
+          # "invalid environment variable"，而且不告诉你是哪个文件的哪一行。
+          # 在这里拦住并直接指出行号，省掉一轮排查。
+          bad_lines=$(awk '!/^[[:space:]]*#/ && !/^[[:space:]]*$/ && !/^[A-Za-z_][A-Za-z0-9_]*=/ { print "    行"NR": "$0 }' "${APP_ENV_FILE}")
+          if [ -n "$bad_lines" ]; then
+            echo "✗ ${APP_ENV_FILE} 里有 env_file 无法解析的行："
+            echo "$bad_lines"
+            echo "  只接受：# 注释 / 空行 / KEY=VALUE"
+            exit 1
+          fi
           docker network inspect portfolio-net >/dev/null 2>&1 \\
             || { echo "✗ Docker 网络 portfolio-net 不存在，见 _infra/README.md"; exit 1; }
 
