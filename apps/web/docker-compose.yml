@@ -1,0 +1,65 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  flowpilot 前端 — 独立编排
+#
+#  由 apps/web/Jenkinsfile 这样调用（工作目录是仓库根）：
+#    docker compose --env-file /opt/portfolio/flowpilot/web.env \
+#                   -f apps/web/docker-compose.yml up -d
+#
+#  ⚠️ build context 是仓库根（../..）而不是当前目录。这是 pnpm workspace
+#     的必然结果：构建前端要先编译 packages/contracts，而 Dockerfile 里的
+#     pnpm install 也需要根目录的 pnpm-lock.yaml 和 pnpm-workspace.yaml。
+#     只拿 apps/web 目录是装不起来的。
+#
+#  和后端完全分开的一个 compose 栈（project name 不同），所以前端部署
+#  不会碰到 api 和 n8n 容器，而且 web.env 里没有任何密钥。
+# ═══════════════════════════════════════════════════════════════════════
+name: flowpilot-web
+
+services:
+  web:
+    build:
+      # 相对于本文件所在目录（apps/web/），指向仓库根
+      context: ../..
+      dockerfile: Dockerfile
+      target: web
+      args:
+        # 构建期内联进客户端 bundle，改了必须重新打包镜像
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:?未设置 NEXT_PUBLIC_API_BASE}
+        NEXT_PUBLIC_EVENT_TRANSPORT: ${NEXT_PUBLIC_EVENT_TRANSPORT:-sse}
+    image: flowpilot-web:${IMAGE_TAG:-latest}
+    container_name: flowpilot-web
+    restart: unless-stopped
+
+    environment:
+      NODE_ENV: production
+      TZ: ${TZ:-Asia/Shanghai}
+      # 必须显式写死 3000。后端那份 env 里给 api 用的 PORT=3001 如果不小心
+      # 漏进来，Next.js 会跟着去听 3001，而 ports 映射的是 3000 → 直接 502。
+      # 现在前后端 env 已经分开，这里再钉一遍属于双保险。
+      PORT: "3000"
+      HOSTNAME: "0.0.0.0"
+
+    ports:
+      - "127.0.0.1:${WEB_HOST_PORT:-3020}:3000"
+
+    mem_limit: 512m
+    cpus: 1.0
+
+    # 交给 portfolio-infra 栈里的 autoheal 看管，unhealthy 时自动重启
+    labels:
+      autoheal: "true"
+
+    networks:
+      portfolio:
+        aliases: [flowpilot-web]
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+networks:
+  portfolio:
+    external: true
+    name: portfolio-net
