@@ -1,0 +1,409 @@
+// ═══════════════════════════════════════════════════════════════════════
+//  flowpilot / 后端 — NestJS API + n8n 引擎，独立流水线
+//
+//  Jenkins 建 job 时（类型选「流水线」）Script Path 填：apps/api/Jenkinsfile
+//  （Jenkins 把整个仓库 checkout 到工作区根，下面路径都从仓库根算起）
+//
+//  为什么 api 和 n8n 放在同一条流水线：它们共享 N8N_EVENT_SECRET，
+//  而且工作流协议一变往往两边都要改，拆开反而要在两条流水线之间同步
+//  密钥和发布顺序。
+//
+//  但在这条流水线内部，两者的打包判断是分开的 —— 改 n8n 的工作流 JSON
+//  不会去重建 api 镜像。这个区分很实在：api 镜像要装整个 monorepo 的
+//  依赖（几分钟），而 n8n 镜像只是往基础镜像里 COPY 几个 JSON（几秒）。
+// ═══════════════════════════════════════════════════════════════════════
+
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    timeout(time: 40, unit: 'MINUTES')
+    disableConcurrentBuilds()
+    buildDiscarder(logRotator(numToKeepStr: '20'))
+  }
+
+  // ── 触发方式 ──────────────────────────────────────────────────────
+  //  构建哪个分支由 job 配置里的 Branch Specifier 决定（填 */main），
+  //  下面的阶段不再判断分支 —— 也就是说改那个字段就等于改部署目标，
+  //  别随手改成 */develop，那会把开发分支的代码发到生产。
+  triggers {
+    // GitHub webhook 推送即触发。
+    // job 配置里也要勾上 "GitHub hook trigger for GITScm polling"，
+    // 两者配合才生效。
+    githubPush()
+    // 兜底：每 4 小时轮询一次，防止 webhook 偶尔丢失（网络抖动、
+    // GitHub 侧重试失败）。不需要可以删掉这行。
+    pollSCM('H H/4 * * *')
+  }
+  parameters {
+    booleanParam(
+      name: 'FORCE_REBUILD',
+      defaultValue: false,
+      description: '忽略变更检测，强制重新打包 api 和 n8n 两个镜像。注意：只是改了 server.env 的话不用勾这个，勾 REDEPLOY 就够了。'
+    )
+    booleanParam(
+      name: 'REDEPLOY',
+      defaultValue: false,
+      description: '不重新打包，只用当前镜像重新部署一次，让容器加载新的 server.env。改了数据库密码、OPENAI_API_KEY、WORKFLOW_DRIVER 之后用这个。'
+    )
+    booleanParam(
+      name: 'REIMPORT_WORKFLOWS',
+      defaultValue: false,
+      description: '强制让 n8n 重新导入并发布三个工作流（清掉容器里的 checksum 标记）。⚠️ 会覆盖你在 n8n 编辑器里对这三个工作流做的手工修改。'
+    )
+    booleanParam(
+      name: 'NO_CACHE',
+      defaultValue: false,
+      description: '禁用 Docker 层缓存。只在怀疑缓存脏了时用。'
+    )
+  }
+
+  environment {
+    API_IMAGE    = 'flowpilot-api'
+    N8N_IMAGE    = 'flowpilot-n8n'
+    COMPOSE_FILE = 'apps/api/docker-compose.yml'
+    APP_ENV_FILE = '/opt/portfolio/flowpilot/server.env'
+    BUILD_TAG_   = "${env.BUILD_NUMBER}-${env.GIT_COMMIT?.take(7) ?: 'nogit'}"
+    DOCKER_BUILDKIT = '1'
+  }
+
+  stages {
+
+    stage('环境自检') {
+      steps {
+        sh '''
+          set -e
+          echo ">>> Docker  $(docker --version)"
+          echo ">>> Compose $(docker compose version --short)"
+
+          if [ ! -f "${APP_ENV_FILE}" ]; then
+            echo "✗ 找不到 ${APP_ENV_FILE}"
+            echo "  服务器还没初始化，见 _infra/README.md 的「首次部署」章节"
+            exit 1
+          fi
+
+          docker network inspect portfolio-net >/dev/null 2>&1 \\
+            || { echo "✗ Docker 网络 portfolio-net 不存在，见 _infra/README.md"; exit 1; }
+
+          # Postgres 是硬依赖：api 要用它记录 run/event，
+          # n8n 更是连元数据库都在里面，连不上等于两个服务都没法工作
+          docker ps --filter "name=portfolio-postgres" --filter "status=running" \\
+            --format '{{.Names}}' | grep -q portfolio-postgres \\
+            || { echo "✗ portfolio-postgres 未运行，flowpilot 后端强依赖它"; exit 1; }
+        '''
+        script {
+          env.PREV_API_IMAGE = sh(
+            script: "docker inspect -f '{{.Config.Image}}' flowpilot-api 2>/dev/null || true",
+            returnStdout: true).trim()
+          env.PREV_N8N_IMAGE = sh(
+            script: "docker inspect -f '{{.Config.Image}}' flowpilot-n8n 2>/dev/null || true",
+            returnStdout: true).trim()
+          echo "当前在跑的镜像： api=${env.PREV_API_IMAGE ?: '(无)'}  n8n=${env.PREV_N8N_IMAGE ?: '(无)'}"
+        }
+      }
+    }
+
+    stage('变更分析') {
+      steps {
+        script {
+          // ── api 关心的路径 ──────────────────────────────────────
+          //  contracts 必须纳入：它是前后端共享的编译产物
+          def apiPaths  = ['apps/api/', 'packages/contracts/']
+          //  monorepo 的构建配置在根目录
+          def rootFiles = ['Dockerfile', '.dockerignore', 'tsconfig.base.json', '.npmrc']
+          //  依赖清单在仓库根，不在 apps/api 下
+          def depFiles  = ['pnpm-lock.yaml', 'package.json', 'pnpm-workspace.yaml',
+                           'apps/api/package.json', 'packages/contracts/package.json']
+          def apiInfra  = rootFiles + ['apps/api/docker-compose.yml', 'apps/api/Jenkinsfile']
+
+          // ── n8n 关心的路径 ──────────────────────────────────────
+          def n8nPaths = ['n8n/']
+
+          def previous = env.GIT_PREVIOUS_SUCCESSFUL_COMMIT
+          def changed = null
+
+          if (params.FORCE_REBUILD) {
+            echo '已勾选 FORCE_REBUILD → 两个镜像都强制重新打包'
+          } else if (!previous) {
+            echo '没有「上次成功构建」记录（首次构建或历史被清理）→ 全量打包'
+          } else {
+            def diff = sh(
+              script: "git diff --name-only ${previous} ${env.GIT_COMMIT} 2>/dev/null || true",
+              returnStdout: true).trim()
+            if (diff) {
+              changed = diff.split('\n').collect { it.trim() }.findAll { it }
+            } else {
+              echo '拿不到有效 diff（可能 force push 过）→ 全量打包'
+            }
+          }
+
+          boolean apiSrc = false, apiDep = false, n8nSrc = false, contractsChanged = false
+          int apiSrcCount = 0, n8nSrcCount = 0
+          def changedDepFiles = []
+
+          if (changed == null) {
+            apiSrc = true; apiDep = true; n8nSrc = true
+          } else {
+            // api 侧
+            def apiMine = changed.findAll { p ->
+              apiPaths.any { w -> p.startsWith(w) } || (p in rootFiles) || (p in depFiles)
+            }
+            changedDepFiles = apiMine.findAll { it in depFiles }
+            apiDep = !changedDepFiles.isEmpty()
+            contractsChanged = apiMine.any { it.startsWith('packages/contracts/') }
+
+            def apiSrcFiles = apiMine.findAll { p ->
+              !(p in depFiles) && !(p ==~ /(?i).*\.(md|txt)$/)
+            }
+            apiSrcCount = apiSrcFiles.size()
+            apiSrc = apiSrcCount > 0
+            if (apiMine.any { it in apiInfra }) {
+              echo '构建/编排文件有变更 → api 强制重新打包'
+              apiSrc = true
+            }
+
+            // n8n 侧
+            def n8nMine = changed.findAll { p ->
+              n8nPaths.any { w -> p.startsWith(w) } && !(p ==~ /(?i).*\.(md|txt)$/)
+            }
+            n8nSrcCount = n8nMine.size()
+            n8nSrc = n8nSrcCount > 0
+          }
+
+          boolean buildApi = apiSrc || apiDep
+          boolean buildN8n = n8nSrc
+
+          // 兜底：不打包但本地又没有可复用的旧镜像
+          if (!buildApi && !env.PREV_API_IMAGE) { echo '本地无 api 旧镜像 → 强制打包'; buildApi = true; apiSrc = true }
+          if (!buildN8n && !env.PREV_N8N_IMAGE) { echo '本地无 n8n 旧镜像 → 强制打包'; buildN8n = true; n8nSrc = true }
+
+          boolean needBuild  = buildApi || buildN8n
+          boolean needDeploy = needBuild || params.REDEPLOY || params.REIMPORT_WORKFLOWS
+
+          if (!needBuild && needDeploy) {
+            def prev = env.PREV_API_IMAGE
+            if (!prev) {
+              error 'REDEPLOY 需要已存在的镜像，但当前没有容器在跑'
+            }
+            env.DEPLOY_TAG = prev.contains(':') ? prev.substring(prev.lastIndexOf(':') + 1) : 'latest'
+            echo "只重新部署，沿用镜像 tag：${env.DEPLOY_TAG}"
+          } else {
+            env.DEPLOY_TAG = env.BUILD_TAG_
+          }
+
+          env.BUILD_API    = buildApi.toString()
+          env.BUILD_N8N    = buildN8n.toString()
+          env.NEED_BUILD   = needBuild.toString()
+          env.NEED_DEPLOY  = needDeploy.toString()
+          env.DEPS_CHANGED = apiDep.toString()
+
+          // ── 打包决策表 ──────────────────────────────────────────
+          String basis = previous ? "${previous.take(7)}（上次成功构建）" : '无（首次构建）'
+          String apiSrcLine = apiSrc ? "是   ${apiSrcCount} 个文件" : '否'
+          if (contractsChanged) {
+            apiSrcLine += '（含 packages/contracts 共享契约）'
+          }
+          String apiDepLine
+          if (apiDep) {
+            apiDepLine = "是   ${changedDepFiles.join(', ')}"
+          } else {
+            apiDepLine = '否   → install 层命中缓存'
+          }
+          String n8nLine = n8nSrc ? "是   ${n8nSrcCount} 个文件（工作流 / 镜像定义）" : '否'
+
+          String verdict
+          if (needBuild) {
+            def parts = []
+            if (buildApi) parts << 'api'
+            if (buildN8n) parts << 'n8n'
+            verdict = "重新打包 ${parts.join(' + ')} 并部署（tag=${env.DEPLOY_TAG}）"
+          } else if (needDeploy) {
+            verdict = "只重新部署，不打包（沿用 ${env.DEPLOY_TAG}）"
+          } else {
+            verdict = '跳过 —— 本模块无变更'
+          }
+
+          echo """
+────────────────────────────────────────────────────────────────
+  打包决策 · flowpilot / server (api + n8n)
+────────────────────────────────────────────────────────────────
+  比较基点      ${basis}
+  本次提交      ${env.GIT_COMMIT?.take(7) ?: '-'}
+
+  api 源码变更  ${apiSrcLine}
+  api 依赖变更  ${apiDepLine}
+  n8n 变更      ${n8nLine}
+
+  结论          ${verdict}
+────────────────────────────────────────────────────────────────
+"""
+
+          if (needBuild) {
+            currentBuild.description = "api=${buildApi} n8n=${buildN8n} · ${env.DEPLOY_TAG}"
+          } else if (needDeploy) {
+            currentBuild.description = "仅重部署 ${env.DEPLOY_TAG}"
+          } else {
+            currentBuild.description = '无变更，已跳过'
+          }
+        }
+      }
+    }
+
+    stage('打包镜像') {
+      when { environment name: 'NEED_BUILD', value: 'true' }
+      steps {
+        script {
+          if (env.DEPS_CHANGED == 'true') {
+            echo '依赖清单有变更：整个 workspace 会重装依赖，但 pnpm store 挂了 cache mount，已下载过的包会直接复用'
+          }
+
+          def targets = []
+          if (env.BUILD_API == 'true') targets << 'api'
+          if (env.BUILD_N8N == 'true') targets << 'n8n'
+
+          withEnv(["IMAGE_TAG=${env.DEPLOY_TAG}"]) {
+            sh """
+              set -e
+              docker compose \\
+                --env-file '${env.APP_ENV_FILE}' \\
+                -f '${env.COMPOSE_FILE}' \\
+                build ${params.NO_CACHE ? '--no-cache' : ''} ${targets.join(' ')}
+            """
+          }
+
+          // 没重建的那个：把本次的新 tag 指向它正在跑的镜像，
+          // 否则 compose up 会因为找不到 <image>:<新tag> 而失败
+          if (env.BUILD_API != 'true') {
+            sh "docker tag '${env.PREV_API_IMAGE}' '${env.API_IMAGE}:${env.DEPLOY_TAG}'"
+            echo "api 未变更，沿用 ${env.PREV_API_IMAGE}"
+          }
+          if (env.BUILD_N8N != 'true') {
+            sh "docker tag '${env.PREV_N8N_IMAGE}' '${env.N8N_IMAGE}:${env.DEPLOY_TAG}'"
+            echo "n8n 未变更，沿用 ${env.PREV_N8N_IMAGE}"
+          }
+        }
+      }
+    }
+
+    stage('部署') {
+      when { environment name: 'NEED_DEPLOY', value: 'true' }
+      steps {
+        script {
+          if (params.REIMPORT_WORKFLOWS) {
+            // entrypoint 靠这个 checksum 文件判断工作流要不要重新导入，
+            // 删掉它就会在下次启动时强制重新导入并发布
+            echo '清除 n8n 工作流导入标记，本次启动将强制重新导入'
+            sh '''
+              set +e
+              docker exec flowpilot-n8n \
+                rm -f /home/node/.n8n/.flowpilot-workflows.sha256 2>/dev/null
+            '''
+          }
+        }
+        withEnv(["IMAGE_TAG=${env.DEPLOY_TAG}"]) {
+          sh '''
+            set -e
+            echo ">>> 滚动更新（tag=${IMAGE_TAG}）"
+            docker compose --env-file "${APP_ENV_FILE}" -f "${COMPOSE_FILE}" up -d
+            docker compose --env-file "${APP_ENV_FILE}" -f "${COMPOSE_FILE}" ps
+          '''
+        }
+      }
+    }
+
+    stage('健康检查') {
+      when { environment name: 'NEED_DEPLOY', value: 'true' }
+      steps {
+        script {
+          // n8n 首次启动要跑数据库迁移 + 导入三个工作流（每次 CLI 调用都会
+          // 完整启停一次 n8n 进程），所以等待窗口给到 5 分钟
+          int rc = sh(returnStatus: true, script: '''
+            deadline=$(( $(date +%s) + 300 ))
+            bad=""
+            while [ "$(date +%s)" -lt "$deadline" ]; do
+              bad=""
+              for c in flowpilot-api flowpilot-n8n; do
+                state=$(docker inspect -f '{{.State.Health.Status}}' "$c" 2>/dev/null || echo missing)
+                [ "$state" = "healthy" ] || bad="$bad $c($state)"
+              done
+              if [ -z "$bad" ]; then
+                echo "✓ api 和 n8n 均 healthy"
+                exit 0
+              fi
+              echo "等待:$bad"
+              sleep 10
+            done
+            echo "✗ 健康检查超时，未通过:$bad"
+            exit 1
+          ''')
+
+          if (rc != 0) {
+            echo '── 容器日志 ──────────────────────────────────────'
+            sh 'docker logs --tail 100 flowpilot-api 2>&1 || true'
+            sh 'docker logs --tail 120 flowpilot-n8n 2>&1 || true'
+            error '健康检查未通过'
+          }
+
+          // 端到端确认：/api/health 会把当前 workflow driver 和持久化后端
+          // 一起报出来。容器 healthy 只说明进程活着，这一步才能确认它真的
+          // 连上了 Postgres、也真的认得到 n8n。
+          sh '''
+            set +e
+            echo ">>> /api/health 详情"
+            docker exec flowpilot-api node -e "
+              fetch('http://127.0.0.1:' + (process.env.PORT || 3001) + '/api/health')
+                .then(r => r.text()).then(t => console.log(t))
+                .catch(e => console.error('探测失败:', e.message))
+            "
+          '''
+        }
+      }
+    }
+  }
+
+  post {
+    failure {
+      script {
+        boolean deployed = env.NEED_DEPLOY == 'true'
+        boolean rollbackable = env.PREV_API_IMAGE && env.PREV_N8N_IMAGE
+        if (deployed && rollbackable) {
+          echo '── 回滚到上一版镜像 ───────────────────────────────'
+          withEnv(['IMAGE_TAG=rollback']) {
+            sh """
+              set +e
+              docker tag '${env.PREV_API_IMAGE}' '${env.API_IMAGE}:rollback'
+              docker tag '${env.PREV_N8N_IMAGE}' '${env.N8N_IMAGE}:rollback'
+              docker compose --env-file '${env.APP_ENV_FILE}' -f '${env.COMPOSE_FILE}' up -d
+              docker compose --env-file '${env.APP_ENV_FILE}' -f '${env.COMPOSE_FILE}' ps
+            """
+          }
+          echo "已回滚。失败版本 ${env.DEPLOY_TAG} 的镜像仍保留，可本地复现排查。"
+        } else if (deployed) {
+          echo '没有可回滚的完整上一版（首次部署失败），请看上面的容器日志。'
+        }
+      }
+    }
+    success {
+      script {
+        if (env.NEED_BUILD == 'true') {
+          sh '''
+            set +e
+            for repo in flowpilot-api flowpilot-n8n; do
+              docker images "$repo" --format '{{.Tag}}' \
+                | grep -E '^[0-9]+-' | sort -t- -k1,1 -n -r | tail -n +4 \
+                | while read -r tag; do
+                    echo "清理旧镜像 ${repo}:${tag}"
+                    docker rmi "${repo}:${tag}" >/dev/null 2>&1
+                  done
+            done
+            docker image prune -f >/dev/null 2>&1
+          '''
+        }
+      }
+    }
+    always {
+      sh 'docker builder prune -f --filter until=168h >/dev/null 2>&1 || true'
+    }
+  }
+}

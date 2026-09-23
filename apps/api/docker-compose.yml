@@ -1,0 +1,181 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  flowpilot 后端 — NestJS API + n8n 工作流引擎
+#
+#  由 apps/api/Jenkinsfile 这样调用（工作目录是仓库根）：
+#    docker compose --env-file /opt/portfolio/flowpilot/server.env \
+#                   -f apps/api/docker-compose.yml up -d
+#
+#  为什么 api 和 n8n 放在同一个栈、同一条流水线：
+#  它们共享 N8N_EVENT_SECRET（互相回调时校验来源），而且工作流协议一变
+#  往往两边都要改。拆开反而要在两条流水线之间同步密钥和发布顺序。
+#
+#  ⚠️ 这里刻意不用 env_file 整体注入，而是给每个服务显式列出
+#     environment。因为两个服务对同名变量的期望是冲突的：
+#
+#       N8N_WEBHOOK_URL   api 理解为「我要去调的 n8n 地址」(内网容器名)
+#                         n8n 理解为「我自己的公网地址」(生成 webhook 链接
+#                         和审批用的 resumeUrl)
+#
+#     共用一份 env_file 的话，n8n 会把内网地址当成自己的公网身份，
+#     生成出来的链接全是 http://flowpilot-n8n:5678/… —— 容器内互调没问题，
+#     但任何要给浏览器或第三方回调的链接都是废的。
+# ═══════════════════════════════════════════════════════════════════════
+name: flowpilot-api
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "3"
+
+services:
+  # ── NestJS API ────────────────────────────────────────────────────
+  api:
+    build:
+      # 相对于本文件所在目录（apps/api/），指向仓库根 ——
+      # monorepo 构建需要根目录的 lockfile 和 packages/contracts
+      context: ../..
+      dockerfile: Dockerfile
+      target: api
+    image: flowpilot-api:${IMAGE_TAG:-latest}
+    container_name: flowpilot-api
+    restart: unless-stopped
+
+    environment:
+      NODE_ENV: production
+      TZ: ${TZ:-Asia/Shanghai}
+
+      PORT: ${API_CONTAINER_PORT:-3001}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+
+      WORKFLOW_DRIVER: ${WORKFLOW_DRIVER:-n8n}
+      SIMULATOR_NODE_DELAY_MS: ${SIMULATOR_NODE_DELAY_MS:-130}
+
+      # API → n8n 走 Docker 内网，绕开 nginx 上的 Basic Auth
+      N8N_WEBHOOK_URL: ${API_N8N_WEBHOOK_URL}
+      N8N_INTERNAL_BASE_URL: ${API_N8N_INTERNAL_BASE_URL}
+      N8N_HEALTHCHECK_URL: ${API_N8N_HEALTHCHECK_URL}
+      N8N_WEBHOOK_TIMEOUT_MS: ${N8N_WEBHOOK_TIMEOUT_MS:-10000}
+      N8N_COLD_START_TIMEOUT_MS: ${N8N_COLD_START_TIMEOUT_MS:-0}
+      N8N_COLD_START_POLL_MS: ${N8N_COLD_START_POLL_MS:-2000}
+      N8N_EVENT_SECRET: ${N8N_EVENT_SECRET:?未设置 N8N_EVENT_SECRET}
+
+      PERSISTENCE_DRIVER: ${PERSISTENCE_DRIVER:-postgres}
+      DATABASE_URL: ${DATABASE_URL:?未设置 DATABASE_URL}
+      FLOWPILOT_TABLE_PREFIX: ${FLOWPILOT_TABLE_PREFIX:-flowpilot_}
+
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-3021}:${API_CONTAINER_PORT:-3001}"
+
+    mem_limit: 768m
+    cpus: 1.0
+
+    labels:
+      autoheal: "true"
+
+    networks:
+      portfolio:
+        aliases: [flowpilot-api]
+
+    logging: *default-logging
+
+  # ── n8n 工作流引擎 ────────────────────────────────────────────────
+  n8n:
+    build:
+      context: ../../n8n
+      dockerfile: Dockerfile
+    image: flowpilot-n8n:${IMAGE_TAG:-latest}
+    container_name: flowpilot-n8n
+    restart: unless-stopped
+
+    environment:
+      TZ: ${TZ:-Asia/Shanghai}
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-Asia/Shanghai}
+
+      N8N_PORT: "5678"
+      N8N_LISTEN_ADDRESS: "0.0.0.0"
+
+      # n8n 的公网身份：它据此生成 webhook 地址和编辑器链接，
+      # 必须是浏览器能访问到的地址，不能填内网容器名
+      N8N_HOST: ${N8N_PUBLIC_HOST:?未设置 N8N_PUBLIC_HOST}
+      N8N_PROTOCOL: https
+      N8N_EDITOR_BASE_URL: ${N8N_PUBLIC_URL}
+      N8N_WEBHOOK_URL: ${N8N_PUBLIC_URL}
+      # nginx 在前面加了一跳，不告诉 n8n 的话它拿到的客户端 IP 和协议都是错的
+      N8N_PROXY_HOPS: "1"
+
+      # ⚠️ 换掉这个密钥会导致 n8n 里已保存的凭据全部无法解密
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?未设置 N8N_ENCRYPTION_KEY}
+
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: portfolio-postgres
+      DB_POSTGRESDB_PORT: "5432"
+      DB_POSTGRESDB_DATABASE: ${N8N_DB_NAME:-n8n}
+      DB_POSTGRESDB_USER: ${N8N_DB_USER:-n8n}
+      DB_POSTGRESDB_PASSWORD: ${N8N_DB_PASSWORD:?未设置 N8N_DB_PASSWORD}
+      DB_POSTGRESDB_SCHEMA: public
+      DB_POSTGRESDB_POOL_SIZE: "4"
+
+      # 工作流节点里要用 $env 读下面两个值来回调 FlowPilot API，
+      # 所以不能屏蔽节点内的环境变量访问
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      FLOWPILOT_API_URL: ${FLOWPILOT_API_URL:-http://flowpilot-api:3001}
+      N8N_EVENT_SECRET: ${N8N_EVENT_SECRET}
+
+      # 关掉遥测和版本提醒：自建展示环境，不需要往外发数据
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+      N8N_TEMPLATES_ENABLED: "false"
+
+      # 自动清理 7 天前的执行记录，否则执行历史会把 Postgres 撑大
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "168"
+      N8N_CONCURRENCY_PRODUCTION_LIMIT: "5"
+
+    volumes:
+      # 存加密后的凭据，以及 entrypoint 用来判断「工作流要不要重新导入」
+      # 的 checksum 标记文件。这个卷丢了会导致凭据全废、工作流重新导入。
+      - n8n-data:/home/node/.n8n
+
+    ports:
+      - "127.0.0.1:${N8N_HOST_PORT:-5678}:5678"
+
+    # n8n 镜像本身没带 HEALTHCHECK，在这里补上。
+    # start_period 给到 180s：首次启动要跑完整的数据库迁移、导入三个工作流、
+    # 再逐个发布，而每次 n8n CLI 调用都会完整启停一次 n8n 进程，
+    # 低配机器上累计可能超过两分钟。给少了会被误判成启动失败，
+    # 然后 restart 策略把它反复重启，永远起不来。
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5678/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      start_period: 180s
+      retries: 5
+
+    mem_limit: 1g
+    cpus: 1.0
+
+    # start_period 内 Docker 报的是 starting 而不是 unhealthy，
+    # 所以 autoheal 不会在首次启动过程中误杀它
+    labels:
+      autoheal: "true"
+
+    networks:
+      portfolio:
+        aliases: [flowpilot-n8n]
+
+    logging: *default-logging
+
+volumes:
+  n8n-data:
+    name: flowpilot-n8n-data
+
+networks:
+  portfolio:
+    external: true
+    name: portfolio-net
