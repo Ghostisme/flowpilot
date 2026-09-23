@@ -32,17 +32,40 @@ MARKER="/home/node/.n8n/.flowpilot-workflows.sha256"
 CURRENT_CHECKSUM="$(sha256sum /opt/flowpilot/workflows/*.json | sha256sum | awk '{print $1}')"
 IMPORTED_CHECKSUM="$(cat "$MARKER" 2>/dev/null || true)"
 
-# 暂时跳过 workflow 导入，专注于让 n8n 先启动
-# if [ "$CURRENT_CHECKSUM" != "$IMPORTED_CHECKSUM" ]; then
-#   echo "Importing FlowPilot workflows..."
-#   n8n import:workflow --separate --input=/opt/flowpilot/workflows || echo "WARNING: workflow import failed"
-#   n8n publish:workflow --id=flowpilot-emit-event || echo "WARNING: failed to publish flowpilot-emit-event"
-#   n8n publish:workflow --id=flowpilot-lead-intake || echo "WARNING: failed to publish flowpilot-lead-intake"
-#   n8n publish:workflow --id=flowpilot-error-handler || echo "WARNING: failed to publish flowpilot-error-handler"
-#   printf '%s' "$CURRENT_CHECKSUM" > "$MARKER"
-# fi
+# 工作流自动导入。
+#
+# 用 checksum 做幂等标记：只有 workflows/*.json 的内容真的变了才重新导入，
+# 所以容器日常重启不会反复覆盖你在编辑器里做的临时调整，而镜像里带了新版
+# 工作流时又能自动同步过去。
+#
+# 这一步失败不阻断启动（|| echo WARNING）：n8n 起不来的话连编辑器都进不去，
+# 那就完全没法排查了。宁可让它带着「工作流没导入」的状态启动，也不要在
+# entrypoint 里挂掉。导入结果可以在编辑器的 Workflows 列表里确认。
+if [ "$CURRENT_CHECKSUM" != "$IMPORTED_CHECKSUM" ]; then
+  echo "==> Importing FlowPilot workflows (checksum changed)..."
 
-echo "==> Skipping workflow import for now, focusing on getting n8n to start..."
+  if n8n import:workflow --separate --input=/opt/flowpilot/workflows; then
+    # import:workflow 一律把导入的工作流置为「未发布」，JSON 里的
+    # "active": true 不会被采纳（--activeState=fromJson 只在 multi-main /
+    # queue 模式下可用，我们是单实例）。所以必须显式逐个发布，
+    # 否则 lead-intake 的 webhook 不会注册，API 调进来只会 404。
+    #
+    # n8n 2.0 用 publish/unpublish 取代了 active 开关，update:workflow
+    # 虽然还能用但已标记废弃。
+    for wf in flowpilot-emit-event flowpilot-lead-intake flowpilot-error-handler; do
+      n8n publish:workflow --id="$wf" \
+        || echo "WARNING: failed to publish $wf"
+    done
+
+    printf '%s' "$CURRENT_CHECKSUM" > "$MARKER"
+    echo "==> Workflows imported and published"
+  else
+    echo "WARNING: workflow import failed — 请进编辑器手工导入 /opt/flowpilot/workflows"
+  fi
+else
+  echo "==> Workflows already up to date (checksum unchanged), skipping import"
+fi
+
 echo "==> Starting n8n..."
 echo "==> Final environment check:"
 echo "    N8N_PORT: ${N8N_PORT:-not set}"
