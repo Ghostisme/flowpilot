@@ -1,5 +1,50 @@
+# 默认：让 git 自动识别文本文件，仓库内一律以 LF 存储
 * text=auto
-*.sh text eol=lf
+
+# ── 部署相关文件强制 LF ────────────────────────────────────────────────
+#  原来这里只显式声明了 *.sh / *.json / *.yml / *.yaml，而 Dockerfile、
+#  Jenkinsfile、.dockerignore 这些没有扩展名的文件只能靠 `text=auto`
+#  的内容嗅探兜着 —— 那依赖各人本地的 core.autocrlf 配置，换台机器或
+#  别人克隆仓库就可能带出 CRLF。
+#
+#  带上 CRLF 的后果：
+#    · n8n 的 docker-entrypoint.sh 直接报 $'\r': command not found
+#    · Jenkinsfile 里 sh '''…''' 的内容会把 \r 一起传给 shell
+#    · .env 每行值尾部多一个隐形 \r，于是数据库连接串、N8N_EVENT_SECRET
+#      全是错的（密钥比对失败 → n8n 回调一律 401），而日志里看不出来
+*.sh           text eol=lf
+Dockerfile     text eol=lf
+Dockerfile.*   text eol=lf
+.dockerignore  text eol=lf
+Jenkinsfile    text eol=lf
+*.conf         text eol=lf
+*.template     text eol=lf
+.env.example   text eol=lf
+.npmrc         text eol=lf
+
+*.ts   text eol=lf
+*.tsx  text eol=lf
+*.js   text eol=lf
+*.mjs  text eol=lf
+*.mts  text eol=lf
 *.json text eol=lf
-*.yml text eol=lf
+*.yml  text eol=lf
 *.yaml text eol=lf
+*.sql  text eol=lf
+*.css  text eol=lf
+*.md   text eol=lf
+*.toml text eol=lf
+
+# Windows 专用脚本保持 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# 二进制 / 不可转换内容
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.pem  binary
